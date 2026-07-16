@@ -1,10 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Gamepad2, History, Trophy, UserRound } from "lucide-react";
-import { XolatLogoSmall } from "@/components/xolat-logo-small";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -37,7 +36,7 @@ const tickerVariants = {
 };
 
 export default function Home() {
-  const router = useRouter();
+  const [connected, setConnected] = useState(false);
 
   const navItems = [
     { href: "/", label: "ARENA", icon: Gamepad2 },
@@ -51,25 +50,24 @@ export default function Home() {
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[#0b0a0d]/90 px-5 py-4 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition">
-            <motion.div 
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <XolatLogoSmall className="w-10 h-8" />
-            </motion.div>
-            <span className="text-3xl font-black italic tracking-[-0.09em] text-[#d6a8ff]">Xolat</span>
-          </Link>
+          <motion.div 
+            className="flex items-center gap-2.5"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <span className="grid h-7 w-7 place-items-center text-2xl text-[#d5a7ff]">⬡</span>
+            <span className="text-3xl font-black italic tracking-[-0.09em] text-[#d6a8ff]">XOLAT</span>
+          </motion.div>
           <motion.button 
-            onClick={() => {}}
+            onClick={() => setConnected(!connected)}
             className="rounded-full border border-[#8d739c] bg-[#211a27] px-4 py-2 font-mono text-xs tracking-[.16em] text-[#e1c3ff] transition hover:border-[#d3a4ff]"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
             whileHover={{ scale: 1.05 }}
           >
-            CONNECT
+            {connected ? "CONNECT" : "CONNECT"}
           </motion.button>
         </div>
       </header>
@@ -106,7 +104,7 @@ export default function Home() {
         </motion.p>
 
         <motion.button
-          onClick={() => router.push("/login")}
+          onClick={() => setConnected(true)}
           className="relative mt-12 rounded-2xl bg-[#4ce47d] px-6 py-4 text-xl font-black tracking-[.05em] text-black shadow-[0_0_28px_rgba(76,228,125,.25)] transition hover:scale-[1.03]"
           variants={itemVariants}
           whileHover={{ scale: 1.08, boxShadow: "0 0 40px rgba(76,228,125,.35)" }}
@@ -159,7 +157,7 @@ export default function Home() {
               className="h-full w-[84%] rounded-full bg-gradient-to-r from-[#d5a7ff] to-[#49e27c]"
               initial={{ width: 0 }}
               animate={{ width: "84%" }}
-              transition={{ duration: 1, ease: "easeOut" }}
+              transition={{ duration: 1 }}
             />
           </div>
         </motion.div>
@@ -202,7 +200,7 @@ export default function Home() {
           <motion.div
             className="text-6xl text-[#d5a7ff]"
             animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            transition={{ duration: 2, repeat: Infinity }}
           >
             ▣
           </motion.div>
