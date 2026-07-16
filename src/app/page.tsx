@@ -1,8 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Gamepad2, History, Trophy, UserRound } from "lucide-react";
 import { XolatLogoSmall } from "@/components/xolat-logo-small";
 
@@ -22,7 +22,7 @@ const itemVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.6, ease: "easeOut" },
+    transition: { duration: 0.6 },
   },
 };
 
@@ -32,13 +32,12 @@ const tickerVariants = {
     transition: {
       duration: 30,
       repeat: Infinity,
-      ease: "linear",
     },
   },
 };
 
 export default function Home() {
-  const [connected, setConnected] = useState(false);
+  const router = useRouter();
 
   const navItems = [
     { href: "/", label: "ARENA", icon: Gamepad2 },
@@ -60,7 +59,7 @@ export default function Home() {
             >
               <XolatLogoSmall className="w-10 h-8" />
             </motion.div>
-            <span className="text-3xl font-black italic tracking-[-0.09em] text-[#d6a8ff]">XOPREDICT</span>
+            <span className="text-3xl font-black italic tracking-[-0.09em] text-[#d6a8ff]">Xolat</span>
           </Link>
           <motion.button 
             onClick={() => {}}
@@ -94,7 +93,6 @@ export default function Home() {
           transition={{
             duration: 4,
             repeat: Infinity,
-            ease: "easeInOut",
           }}
         >
           P
@@ -108,7 +106,7 @@ export default function Home() {
         </motion.p>
 
         <motion.button
-          onClick={() => setConnected(true)}
+          onClick={() => router.push("/login")}
           className="relative mt-12 rounded-2xl bg-[#4ce47d] px-6 py-4 text-xl font-black tracking-[.05em] text-black shadow-[0_0_28px_rgba(76,228,125,.25)] transition hover:scale-[1.03]"
           variants={itemVariants}
           whileHover={{ scale: 1.08, boxShadow: "0 0 40px rgba(76,228,125,.35)" }}

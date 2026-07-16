@@ -14,5 +14,5 @@ export type { Pausable } from "./@openzeppelin/contracts/utils/Pausable";
 export { Pausable__factory } from "./factories/@openzeppelin/contracts/utils/Pausable__factory";
 export type { ReentrancyGuard } from "./@openzeppelin/contracts/utils/ReentrancyGuard";
 export { ReentrancyGuard__factory } from "./factories/@openzeppelin/contracts/utils/ReentrancyGuard__factory";
-export type { Xolat } from "./contracts/Xolat";
-export { Xolat__factory } from "./factories/contracts/Xolat__factory";
+export type { Xopredict as Xolat } from "./contracts/Xopredict";
+export { Xopredict__factory as Xolat__factory } from "./factories/contracts/Xopredict__factory";

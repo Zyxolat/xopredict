@@ -15,7 +15,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "XOLAT — Play USDm",
+  title: "Xolat — Play USDm",
   description: "The next-generation USDm prediction arena on Celo.",
 };
 

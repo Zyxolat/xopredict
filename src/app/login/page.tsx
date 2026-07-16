@@ -6,7 +6,10 @@ import { ConnectButton } from "@/components/connect-button";
 import { XolatLogo } from "@/components/xolat-logo";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
+import { useState } from "react";
 import { useEffect } from "react";
+import { Mail, Globe, Wallet } from "lucide-react";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -24,7 +27,7 @@ const itemVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.8, ease: "easeOut" },
+    transition: { duration: 0.8 },
   },
 };
 
@@ -33,29 +36,16 @@ const logoVariants = {
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { duration: 1, ease: "easeOut" },
-  },
-  animate: {
-    y: [0, -10, 0],
-    transition: {
-      duration: 6,
-      repeat: Infinity,
-      ease: "easeInOut",
-    },
+    transition: { duration: 1 },
   },
 };
 
 const glowVariants = {
-  animate: {
-    boxShadow: [
-      "0 0 20px rgba(213, 167, 255, 0.3)",
-      "0 0 40px rgba(213, 167, 255, 0.5)",
-      "0 0 20px rgba(213, 167, 255, 0.3)",
-    ],
+  visible: {
+    opacity: [0.5, 1, 0.5],
     transition: {
       duration: 3,
       repeat: Infinity,
-      ease: "easeInOut",
     },
   },
 };
@@ -63,12 +53,50 @@ const glowVariants = {
 export default function LoginPage() {
   const { isConnected } = useAccount();
   const router = useRouter();
+  const [authMethod, setAuthMethod] = useState<"wallet" | "google" | "email">("wallet");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (isConnected) {
       router.push("/");
     }
   }, [isConnected, router]);
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    await signIn("google", { redirect: true, callbackUrl: "/" });
+  };
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    
+    setIsLoading(true);
+    try {
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      
+      if (result?.ok) {
+        router.push("/");
+      } else {
+        // For email provider, NextAuth sends a magic link
+        await signIn("email", {
+          email,
+          redirect: true,
+          callbackUrl: "/",
+        });
+      }
+    } catch (error) {
+      console.error("Sign in failed:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080709] text-[#f4eef8]">
@@ -94,9 +122,9 @@ export default function LoginPage() {
             className="mb-8 flex items-center justify-center"
             variants={logoVariants}
             initial="hidden"
-            animate={["visible", "animate"]}
+            animate="visible"
           >
-            <motion.div variants={glowVariants} animate="animate">
+            <motion.div variants={glowVariants} initial="hidden" animate="visible">
               <XolatLogo className="w-80 h-56" />
             </motion.div>
           </motion.div>
@@ -121,38 +149,113 @@ export default function LoginPage() {
           </motion.p>
         </motion.div>
 
-        {/* Features */}
+        {/* Auth Methods Tabs */}
         <motion.div
-          className="mb-12 grid max-w-2xl gap-4 sm:grid-cols-3"
-          variants={containerVariants}
+          className="mb-8 w-full max-w-md flex gap-2 justify-center"
+          variants={itemVariants}
         >
-          {[
-            { title: "PREDICT", desc: "Forecast USDm movements" },
-            { title: "COMPETE", desc: "Challenge other players" },
-            { title: "EARN", desc: "Win real rewards" },
-          ].map((feature, idx) => (
-            <motion.div
-              key={idx}
-              className="rounded-lg border border-[#8d739c]/40 bg-[#0b0a0d]/50 px-4 py-6 text-center backdrop-blur"
-              variants={itemVariants}
-              whileHover={{ borderColor: "#d5a7ff" }}
-            >
-              <h3 className="font-bold tracking-widest text-[#d5a7ff]">
-                {feature.title}
-              </h3>
-              <p className="mt-2 text-xs text-[#b8a4c4]">{feature.desc}</p>
-            </motion.div>
-          ))}
+          <button
+            onClick={() => setAuthMethod("wallet")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs tracking-wider transition ${
+              authMethod === "wallet"
+                ? "bg-[#d5a7ff] text-black"
+                : "bg-[#2a2332] text-[#b8a4c4] hover:bg-[#3a3342]"
+            }`}
+          >
+            <Wallet size={16} />
+            WALLET
+          </button>
+          <button
+            onClick={() => setAuthMethod("google")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs tracking-wider transition ${
+              authMethod === "google"
+                ? "bg-[#d5a7ff] text-black"
+                : "bg-[#2a2332] text-[#b8a4c4] hover:bg-[#3a3342]"
+            }`}
+          >
+            <Globe size={16} />
+            GOOGLE
+          </button>
+          <button
+            onClick={() => setAuthMethod("email")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs tracking-wider transition ${
+              authMethod === "email"
+                ? "bg-[#d5a7ff] text-black"
+                : "bg-[#2a2332] text-[#b8a4c4] hover:bg-[#3a3342]"
+            }`}
+          >
+            <Mail size={16} />
+            EMAIL
+          </button>
         </motion.div>
 
-        {/* Connect Button */}
-        <motion.div className="mb-8 flex flex-col items-center gap-6" variants={itemVariants}>
-          <div className="w-full sm:w-auto">
-            <ConnectButton />
-          </div>
-          <p className="text-xs text-[#8d739c]">
-            Connect your wallet to get started
-          </p>
+        {/* Auth Content */}
+        <motion.div
+          className="w-full max-w-md rounded-lg border border-[#8d739c]/40 bg-[#0b0a0d]/50 px-6 py-8 backdrop-blur"
+          variants={itemVariants}
+        >
+          {authMethod === "wallet" && (
+            <div className="space-y-4">
+              <p className="text-xs text-[#b8a4c4] text-center mb-4">
+                Connect your Web3 wallet to play Xolat
+              </p>
+              <ConnectButton />
+            </div>
+          )}
+
+          {authMethod === "google" && (
+            <div className="space-y-4">
+              <p className="text-xs text-[#b8a4c4] text-center mb-6">
+                Sign in with your Google account
+              </p>
+              <button
+                onClick={handleGoogleSignIn}
+                disabled={isLoading}
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-white text-black py-3 font-semibold hover:bg-gray-100 disabled:opacity-50 transition"
+              >
+                <Globe size={18} />
+                {isLoading ? "SIGNING IN..." : "SIGN IN WITH GOOGLE"}
+              </button>
+            </div>
+          )}
+
+          {authMethod === "email" && (
+            <form onSubmit={handleEmailSignIn} className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono text-[#b8a4c4] mb-2 tracking-wide">
+                  EMAIL
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  className="w-full px-4 py-2 rounded-lg bg-[#1a1820] border border-[#8d739c]/30 text-white placeholder-[#8d739c] focus:outline-none focus:border-[#d5a7ff]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-mono text-[#b8a4c4] mb-2 tracking-wide">
+                  PASSWORD
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2 rounded-lg bg-[#1a1820] border border-[#8d739c]/30 text-white placeholder-[#8d739c] focus:outline-none focus:border-[#d5a7ff]"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoading || !email || !password}
+                className="w-full py-3 bg-gradient-to-r from-[#d5a7ff] to-[#8d739c] text-black font-bold rounded-lg hover:opacity-90 disabled:opacity-50 transition"
+              >
+                {isLoading ? "SIGNING IN..." : "SIGN IN"}
+              </button>
+            </form>
+          )}
         </motion.div>
 
         {/* Footer Links */}

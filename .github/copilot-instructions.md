@@ -17,7 +17,7 @@
 	- `npm run build` completes successfully.
 
 - [x] Create and Run Task
-	- Added and ran the `Build XOPREDICT` task.
+	- Added and ran the `Build XOLAT` task.
 
 - [x] Launch the Project
 	- Development server started at `npm run dev` (http://localhost:3000).

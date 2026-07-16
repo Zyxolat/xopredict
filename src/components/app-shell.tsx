@@ -4,7 +4,10 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowLeft, Gamepad2, History, ShieldCheck, Trophy, UserRound } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { ConnectButton } from "@/components/connect-button";
+import { UserProfile } from "@/components/user-profile";
+import { useWalletPersistence } from "@/lib/hooks/useWalletPersistence";
 
 const links = [
   { href: "/", label: "Arena", icon: Gamepad2 },
@@ -26,6 +29,10 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
   const path = usePathname();
   const router = useRouter();
   const isHome = path === "/";
+  const { data: session } = useSession();
+  const { isConnected } = useWalletPersistence();
+
+  const isAuthenticated = !!session || isConnected;
 
   return (
     <main className="min-h-screen bg-[#080709] pb-24 text-[#f4eef8]">
@@ -43,10 +50,16 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
               </motion.button>
             )}
             <Link href="/" className="text-2xl font-black italic tracking-[-.08em] text-[#d6a8ff]">
-              ⬡ XOPREDICT
+              ⬡ XOLAT
             </Link>
           </div>
-          <ConnectButton />
+          <div className="flex items-center gap-4">
+            {isAuthenticated ? (
+              <UserProfile />
+            ) : (
+              <ConnectButton />
+            )}
+          </div>
         </div>
       </header>
 
