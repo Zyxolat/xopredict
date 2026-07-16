@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #080709;
+  --foreground: #f4eef8;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -14,10 +14,28 @@
   }
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+button, input {
+  font: inherit;
+}
+
+::selection {
+  color: #0b0a0d;
+  background: #d4a7ff;
 }
 
 @layer utilities {

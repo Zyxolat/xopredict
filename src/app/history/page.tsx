@@ -1,0 +1,5 @@
+import Link from "next/link";
+import { AppShell } from "@/components/app-shell";
+
+const rounds = [{ id: "842", type: "Arena", result: "+42.75", status: "Won" }, { id: "841", type: "Solo", result: "-10.00", status: "Lost" }, { id: "840", type: "Arena", result: "+18.50", status: "Won" }];
+export default function HistoryPage() { return <AppShell title="Round History"><section className="mx-auto max-w-3xl px-5 pt-7"><div className="overflow-hidden rounded-2xl border border-white/15"><div className="grid grid-cols-4 bg-white/[.06] p-4 font-mono text-xs tracking-[.12em] text-[#d8cadd]"><span>ROUND</span><span>MODE</span><span>RESULT</span><span>VERIFY</span></div>{rounds.map((round) => <div key={round.id} className="grid grid-cols-4 items-center border-t border-white/10 p-4 text-sm"><span>#{round.id}</span><span>{round.type}</span><span className={round.status === "Won" ? "text-[#4ce47d]" : "text-red-300"}>{round.result} USDm</span><Link className="font-mono text-xs text-[#d5a7ff]" href={`/verify?round=${round.id}`}>OPEN</Link></div>)}</div></section></AppShell>; }

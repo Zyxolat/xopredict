@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoundType {
+  arena
+  solo
+}
+
+enum CosmeticType {
+  card_back
+  flip_fx
+  frame
+}
+
+model Player {
+  id                 String          @id @default(uuid())
+  address            String          @unique
+  email              String?         @unique
+  username           String?         @unique
+  totalWonUsdm       Decimal         @default(0) @db.Decimal(36, 18)
+  totalPlayed        Int             @default(0)
+  dailyBetTotalUsdm  Decimal         @default(0) @db.Decimal(36, 18)
+  lastBetDate        DateTime        @default(now()) @db.Date
+  rank               String          @default("Bronze")
+  onboarded          Boolean         @default(false)
+  isBanned           Boolean         @default(false)
+  streakDays         Int             @default(0)
+  lastFreePlay       DateTime?
+  createdAt          DateTime        @default(now())
+  picks              Pick[]
+  seasonXp           SeasonXp[]
+  cosmetics          CosmeticOwned[]
+  referralsMade      Referral[]      @relation("referrer")
+  referralReceived   Referral?       @relation("referee")
+  @@map("players")
+}
+
+model Round {
+  id            String    @id @default(uuid())
+  roundId       BigInt    @unique
+  type          RoundType
+  commitHash    String
+  serverSeed    String?
+  clientSeed    String?
+  nonce         Int?
+  vrfRandom     String?
+  numbers       Int[]
+  winnerAddress String?
+  potUsdm       Decimal?  @db.Decimal(36, 18)
+  txHash        String?
+  vrfRequestId  String?
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now())
+  picks         Pick[]
+  @@map("rounds")
+}
+
+model Pick {
+  id            String @id @default(uuid())
+  roundId       String
+  playerAddress String
+  cardIndex     Int
+  value         Int?
+  round         Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  player        Player @relation(fields: [playerAddress], references: [address])
+  @@map("picks")
+}
+
+model Referral {
+  id              String   @id @default(uuid())
+  referrerAddress String
+  refereeAddress  String   @unique
+  bonusClaimed    Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  referrer        Player   @relation("referrer", fields: [referrerAddress], references: [address])
+  referee         Player   @relation("referee", fields: [refereeAddress], references: [address])
+  @@map("referrals")
+}
+
+model Season {
+  id        String     @id @default(uuid())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean    @default(true)
+  xp        SeasonXp[]
+  @@map("seasons")
+}
+
+model SeasonXp {
+  id            String @id @default(uuid())
+  playerAddress String
+  seasonId      String
+  xp            Int    @default(0)
+  player        Player @relation(fields: [playerAddress], references: [address])
+  season        Season @relation(fields: [seasonId], references: [id])
+  @@unique([playerAddress, seasonId])
+  @@map("season_xp")
+}
+
+model CosmeticOwned {
+  id            String       @id @default(uuid())
+  playerAddress String
+  type          CosmeticType
+  name          String
+  purchasedAt   DateTime     @default(now())
+  player        Player       @relation(fields: [playerAddress], references: [address])
+  @@map("cosmetics_owned")
+}
+
+model VipPass {
+  id              String    @id @default(uuid())
+  playerAddress   String    @unique
+  purchaseDate    DateTime  @default(now())
+  expiryDate      DateTime
+  isActive        Boolean   @default(true)
+  renewalCount    Int       @default(0)
+  @@map("vip_passes")
+}
+
+model PrivateArena {
+  id              String    @id @default(uuid())
+  creatorAddress  String
+  inviteCode      String    @unique
+  name            String
+  maxPlayers      Int       @default(4)
+  currentPlayers  Int       @default(1)
+  status          String    @default("active")
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime?
+  @@map("private_arenas")
+}
