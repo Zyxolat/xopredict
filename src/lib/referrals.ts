@@ -1,6 +1,8 @@
 /**
  * Referral system utilities
  */
+import { prisma } from "@/lib/prisma";
+import { Decimal } from "@prisma/client/runtime/library";
 
 export const REFERRAL_BONUS = 1; // 1 USDm for both referrer and referee
 
@@ -28,16 +30,69 @@ export function extractReferrer(searchParams: URLSearchParams): string | null {
 
 /**
  * Award referral bonus to both parties
+ * This is called when referee makes first bet
+ * Both parties get 1 USDm bonus
  */
 export async function awardReferralBonus(
   referrerAddress: string,
   refereeAddress: string
 ): Promise<{ success: boolean; reason?: string }> {
-  // This is called when referee makes first bet
-  // Both get 1 USDm bonus
-  // In production, transfer from treasury to referrerAddress and refereeAddress
-  // TODO: Implement treasury transfer logic
-  void referrerAddress;
-  void refereeAddress;
-  return { success: true };
+  try {
+    // Get referrer player
+    const referrer = await prisma.player.findUnique({
+      where: { address: referrerAddress.toLowerCase() },
+    });
+
+    if (!referrer) {
+      return { success: false, reason: "Referrer not found" };
+    }
+
+    // Get referee player
+    const referee = await prisma.player.findUnique({
+      where: { address: refereeAddress.toLowerCase() },
+    });
+
+    if (!referee) {
+      return { success: false, reason: "Referee not found" };
+    }
+
+    // Check if bonus already claimed
+    const referral = await prisma.referral.findUnique({
+      where: { refereeAddress: refereeAddress.toLowerCase() },
+    });
+
+    if (referral?.bonusClaimed) {
+      return { success: false, reason: "Bonus already claimed" };
+    }
+
+    // Award bonus to both parties: add REFERRAL_BONUS USDm to their totalWonUsdm
+    // This represents treasury transfer
+    await Promise.all([
+      prisma.player.update({
+        where: { address: referrerAddress.toLowerCase() },
+        data: {
+          totalWonUsdm: referrer.totalWonUsdm.add(new Decimal(REFERRAL_BONUS)),
+        },
+      }),
+      prisma.player.update({
+        where: { address: refereeAddress.toLowerCase() },
+        data: {
+          totalWonUsdm: referee.totalWonUsdm.add(new Decimal(REFERRAL_BONUS)),
+        },
+      }),
+    ]);
+
+    // Mark bonus as claimed
+    if (referral) {
+      await prisma.referral.update({
+        where: { id: referral.id },
+        data: { bonusClaimed: true },
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Referral bonus error:", error);
+    return { success: false, reason: "Internal error" };
+  }
 }
