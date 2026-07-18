@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/app-shell";
 import { LoadingState, EmptyState } from "@/components/state-displays";
+import { useEffect, useState } from "react";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -24,22 +25,56 @@ const itemVariants = {
   },
 };
 
-// TODO: Replace with real API call to /api/leaderboard
-const players = [
-  ["01", "Void_Runner", "1,842.30"],
-  ["02", "0xAres", "1,285.10"],
-  ["03", "Holo_G", "970.55"],
-  ["04", "Ether0x", "652.80"],
-];
+interface LeaderboardEntry {
+  position: number;
+  address: string;
+  username: string | null;
+  totalWonUsdm: number;
+  rank: string;
+  totalPlayed: number;
+}
 
 export default function LeaderboardPage() {
-  const loading = false;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [players, setPlayers] = useState<LeaderboardEntry[]>([]);
+
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("/api/leaderboard?type=overall&limit=10");
+        if (!res.ok) throw new Error("Failed to fetch leaderboard");
+        
+        const json = await res.json();
+        setPlayers(json.data.leaderboard);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLeaderboard();
+  }, []);
 
   if (loading) {
     return (
       <AppShell title="Leaderboard">
         <section className="mx-auto max-w-2xl px-5 pt-7">
           <LoadingState />
+        </section>
+      </AppShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppShell title="Leaderboard">
+        <section className="mx-auto max-w-2xl px-5 pt-7">
+          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+            <p className="text-sm text-red-300">{error}</p>
+          </div>
         </section>
       </AppShell>
     );
@@ -73,19 +108,28 @@ export default function LeaderboardPage() {
           initial="hidden"
           animate="visible"
         >
-          {players.map(([rank, name, won]) => (
+          {players.map((player) => (
             <motion.article
-              key={rank}
+              key={player.address}
               className="flex items-center gap-5 rounded-2xl border border-white/15 bg-white/[.025] p-5 hover:bg-white/[.04] transition"
               variants={itemVariants}
               whileHover={{ x: 4 }}
             >
-              <b className="text-2xl text-[#d5a7ff]">{rank}</b>
+              <b className="text-2xl text-[#d5a7ff] w-12 text-center">
+                {String(player.position).padStart(2, "0")}
+              </b>
               <span className="grid h-10 w-10 place-items-center rounded-full bg-[#d5a7ff]/15">
                 ◉
               </span>
-              <b className="flex-1">{name}</b>
-              <span className="font-mono text-[#4ce47d]">{won} USDm</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold truncate">
+                  {player.username || player.address.slice(0, 6) + "..." + player.address.slice(-4)}
+                </p>
+                <p className="text-xs text-[#8d739c]">{player.rank}</p>
+              </div>
+              <span className="font-mono text-[#4ce47d] text-right">
+                {player.totalWonUsdm.toFixed(2)} USDm
+              </span>
             </motion.article>
           ))}
         </motion.div>
