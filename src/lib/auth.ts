@@ -23,11 +23,38 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.address = user.address;
       }
+      
+      // Handle OAuth account linking
+      if (account) {
+        token.provider = account.provider;
+        
+        // For email/Google signups, try to find or create associated Player
+        if (user?.email && !user.address) {
+          // User signed in via Google or Email, not wallet
+          // Try to find existing Player by email
+          let player = await prisma.player.findUnique({
+            where: { email: user.email },
+          });
+          
+          if (!player) {
+            // Create Player record for non-wallet users
+            player = await prisma.player.create({
+              data: {
+                address: user.email, // Use email as placeholder address
+                email: user.email,
+              },
+            });
+          }
+          
+          token.address = player.address;
+        }
+      }
+      
       return token;
     },
     async session({ session, token }) {
@@ -73,10 +100,42 @@ export const authOptions: NextAuthOptions = {
           }
 
           const { data: player } = await response.json();
+          const walletEmail = player.address.toLowerCase();
+
+          // Ensure User record exists for NextAuth linking
+          const user = await prisma.user.upsert({
+            where: { email: walletEmail },
+            create: {
+              email: walletEmail,
+              name: player.address?.slice(0, 6) + "..." + player.address?.slice(-4),
+            },
+            update: {
+              name: player.address?.slice(0, 6) + "..." + player.address?.slice(-4),
+            },
+          });
+
+          // Create Account record linking wallet provider to User
+          await prisma.account.upsert({
+            where: {
+              provider_providerAccountId: {
+                provider: "wallet",
+                providerAccountId: player.address.toLowerCase(),
+              },
+            },
+            create: {
+              userId: user.id,
+              type: "credentials",
+              provider: "wallet",
+              providerAccountId: player.address.toLowerCase(),
+            },
+            update: {
+              userId: user.id,
+            },
+          });
 
           return {
-            id: player.id,
-            email: player.address,
+            id: user.id,
+            email: walletEmail,
             address: player.address,
             name: player.address?.slice(0, 6) + "..." + player.address?.slice(-4),
           };
@@ -93,6 +152,14 @@ export const authOptions: NextAuthOptions = {
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             allowDangerousEmailAccountLinking: true,
           }),
+        ]
+      : []),
+    ...(process.env.RESEND_API_KEY
+      ? [
+          // Email provider using Resend (optional)
+          // To enable: set RESEND_API_KEY in .env.local
+          // import { ResendProvider } from "next-auth/providers/resend";
+          // ResendProvider({ apiKey: process.env.RESEND_API_KEY })
         ]
       : []),
     ...(process.env.EMAIL_SERVER && process.env.EMAIL_FROM
