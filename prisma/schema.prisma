@@ -32,6 +32,7 @@ model Player {
   isBanned           Boolean         @default(false)
   streakDays         Int             @default(0)
   lastFreePlay       DateTime?
+  vipExpiresAt       DateTime?       // VIP pass expiration; null = not VIP
   createdAt          DateTime        @default(now())
   picks              Pick[]
   seasonXp           SeasonXp[]
@@ -112,6 +113,20 @@ model CosmeticOwned {
   purchasedAt   DateTime     @default(now())
   player        Player       @relation(fields: [playerAddress], references: [address])
   @@map("cosmetics_owned")
+}
+
+model PrivateArena {
+  id              String   @id @default(uuid())
+  creatorAddress  String
+  inviteCode      String   @unique
+  betAmount       Decimal  @db.Decimal(36, 18)
+  maxPlayers      Int
+  currentPlayers  Int      @default(1)
+  status          String   @default("active") // active, full, completed
+  players         String[] // array of player addresses
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime // 30 min timeout
+  @@map("private_arenas")
 }
 
 // NextAuth Models

@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
           endDate: activeSeason.endDate,
         },
         playerXP,
-        leaderboard: leaderboard.map((entry, idx) => ({
+        leaderboard: leaderboard.map((entry: typeof leaderboard[number], idx: number) => ({
           rank: idx + 1,
           playerAddress: entry.playerAddress,
           username: entry.player.username,

@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
       // In arena: highest card index wins
       const picks = round.picks;
       if (picks.length > 0) {
-        picks.sort((a, b) => {
+        picks.sort((a: typeof picks[number], b: typeof picks[number]) => {
           const aCard = a.cardIndex;
           const bCard = b.cardIndex;
           return computedNumbers[bCard] - computedNumbers[aCard];
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
         storedNumbers: round.numbers,
         isValid,
         winnerAddress,
-        picks: round.picks.map((p) => ({
+        picks: round.picks.map((p: typeof round.picks[number]) => ({
           playerAddress: p.playerAddress,
           cardIndex: p.cardIndex,
           value: p.value,

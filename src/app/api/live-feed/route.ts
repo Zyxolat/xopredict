@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Format for live feed
-    const feed = wins.map((win) => ({
+    const feed = wins.map((win: typeof wins[number]) => ({
       winner: win.winnerAddress,
       amount: Number(win.potUsdm),
       type: win.type,

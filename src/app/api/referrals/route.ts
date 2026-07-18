@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
               bonusClaimed: asReferre.bonusClaimed,
             }
           : null,
-        referrals: asReferrer.map((r) => ({
+        referrals: asReferrer.map((r: typeof asReferrer[number]) => ({
           address: r.refereeAddress,
           username: r.referee.username,
           bonusClaimed: r.bonusClaimed,
