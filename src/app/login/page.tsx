@@ -226,7 +226,7 @@ void main() {
 
         const signature = await new Promise<string>((resolve, reject) => {
           signMessage(
-            { message },
+            { account: address as `0x${string}`, message },
             {
               onSuccess: (sig) => resolve(sig),
               onError: (err) => reject(err),
@@ -446,7 +446,7 @@ void main() {
                 className="w-4 h-4 mt-0.5 accent-primary cursor-pointer"
               />
               <span className="text-xs text-on-surface-variant group-hover:text-on-surface transition">
-                I agree to XOLAT's <a href="#" className="text-primary hover:underline">Terms of Service</a> and <a href="#" className="text-primary hover:underline">Privacy Policy</a>
+                I agree to XOLAT&apos;s <a href="#" className="text-primary hover:underline">Terms of Service</a> and <a href="#" className="text-primary hover:underline">Privacy Policy</a>
               </span>
             </label>
           </div>
