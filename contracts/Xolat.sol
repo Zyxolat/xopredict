@@ -4,8 +4,19 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
-import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+interface IWitnetRandomness {
+    function estimateRandomizeFee(uint256 gasPrice) external view returns (uint256);
+    function randomize() external payable returns (uint256 requestBlock);
+    function isRandomized(uint256 requestBlock) external view returns (bool);
+    function getRandomnessAfter(uint256 requestBlock) external view returns (bytes32);
+    function random(
+        uint32 range,
+        uint256 nonce,
+        uint256 requestBlock
+    ) external view returns (uint32);
+}
 
 /**
  * @notice USDm-funded game with Chainlink VRF v2.5 integration, commit-reveal
@@ -19,14 +30,12 @@ import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
  * - Pausable by owner, blacklist/ban for compliance
  * - Daily & per-transaction bet limits with cooldown mechanism
  */
-contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
+contract Xolat is ReentrancyGuard, Pausable, Ownable {
     // ============= STATE VARIABLES =============
 
     IERC20 public immutable usdm;
 
-    // VRF Configuration (from constructor, immutable for security)
-    uint256 public immutable s_subscriptionId;
-    bytes32 public immutable keyHash;
+    IWitnetRandomness public immutable witnet;
 
     // Bet Limits
     uint256 public maxBetPerTx = 20e18;
@@ -34,24 +43,23 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
 
     // Game Counters
     uint256 public arenaCount;
+    uint256 public roundCount;
 
     // Cooldown & Loss Tracking
     uint256 public cooldownDuration = 1 hours;
     uint256 public lossesBeforeCooldown = 5;
 
-    // VRF Request Tracking
-    uint256 public vrfRequestTimeout = 300; // 300 seconds
-    mapping(uint256 requestId => VRFRequest) public vrfRequests;
-    mapping(uint256 roundId => uint256 vrfRequestId) public roundVrfMap;
+    uint256 public constant RANDOMNESS_TIMEOUT = 1_200;
+    mapping(uint256 roundId => RandomnessRequest) public randomnessRequests;
 
     // ============= STRUCTS =============
 
-    struct VRFRequest {
-        uint256 requestId;
+    struct RandomnessRequest {
         uint256 roundId;
+        uint256 requestBlock;
         uint256 requestedAt;
+        uint256 celoPaid;
         bool fulfilled;
-        bytes32 vrfRandom;
     }
 
     struct Arena {
@@ -62,8 +70,11 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         bool settled;
         address winner;
         uint256 createdAt;
+        uint256 roundId;
+        uint8 pickedCount;
         address[] players;
         mapping(address => uint8) playerCards; // card index 0-3
+        mapping(address => bool) hasPicked;
     }
 
     struct Round {
@@ -71,17 +82,17 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         string roundType; // "arena" or "solo"
         address player;
         uint256 arenaId; // 0 for solo
-        bytes32 commitHash; // keccak256(abi.encode(vrfRandom, numbers))
+        bytes32 commitHash;
         string serverSeed;
         string clientSeed;
         uint256 nonce;
-        bytes32 vrfRandom;
-        uint256[] numbers; // generated from VRF, 1-100 per card
+        bytes32 randomness;
+        uint256[] numbers;
         address winnerAddress;
         uint256 potUsdm;
         string txHash;
-        uint256 vrfRequestId;
-        string status; // "created", "vrfRequested", "revealed", "completed", "refunded"
+        uint8 selectedCard;
+        string status;
         uint256 createdAt;
     }
 
@@ -118,15 +129,23 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         address indexed player,
         uint8 cardIndex
     );
-    event VRFRequested(
+    event RoundCreated(
         uint256 indexed roundId,
-        uint256 indexed vrfRequestId,
-        address indexed requester
+        string roundType,
+        uint256 indexed arenaId,
+        address indexed player,
+        uint256 potUsdm
     );
-    event CommitRevealed(
+    event RandomnessRequested(
+        uint256 indexed roundId,
+        uint256 indexed requestBlock,
+        address indexed requester,
+        uint256 celoPaid
+    );
+    event RandomnessRevealed(
         uint256 indexed roundId,
         bytes32 commitHash,
-        bytes32 vrfRandom
+        bytes32 randomness
     );
     event WinnerPaid(
         uint256 indexed roundId,
@@ -140,9 +159,9 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         uint256 amount,
         string reason
     );
-    event VRFTimeoutTriggered(
+    event RandomnessTimeoutTriggered(
         uint256 indexed roundId,
-        uint256 indexed vrfRequestId
+        uint256 indexed requestBlock
     );
     event SoloPlayed(
         address indexed player,
@@ -161,19 +180,12 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
 
     // ============= CONSTRUCTOR =============
 
-    constructor(
-        address usdmAddress,
-        address vrfCoordinator,
-        bytes32 _keyHash,
-        uint256 subscriptionId
-    ) VRFConsumerBaseV2Plus(vrfCoordinator) {
+    constructor(address usdmAddress, address witnetAddress) Ownable(msg.sender) {
         require(usdmAddress != address(0), "invalid USDM address");
-        require(_keyHash != bytes32(0), "invalid keyHash");
-        require(subscriptionId > 0, "invalid subscription ID");
+        require(witnetAddress != address(0), "invalid Witnet address");
 
         usdm = IERC20(usdmAddress);
-        keyHash = _keyHash;
-        s_subscriptionId = subscriptionId;
+        witnet = IWitnetRandomness(witnetAddress);
     }
 
 
@@ -186,7 +198,7 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         returns (uint256 arenaId)
     {
         require(!blacklist[msg.sender], "address blacklisted");
-        require(maxPlayers >= 2 && maxPlayers <= 6, "invalid player count");
+        require(maxPlayers >= 2 && maxPlayers <= 4, "player count must be 2-4");
         require(betAmount > 0, "bet must be positive");
 
         _takeBet(msg.sender, betAmount);
@@ -239,9 +251,40 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         Arena storage arena = arenas[arenaId];
         require(arena.playerCount > 0, "arena not found");
         require(!arena.settled, "arena settled");
+        require(arena.roundId == 0, "round already created");
 
+        bool isArenaPlayer;
+        for (uint256 i = 0; i < arena.players.length; i++) {
+            if (arena.players[i] == msg.sender) {
+                isArenaPlayer = true;
+                break;
+            }
+        }
+        require(isArenaPlayer, "not an arena player");
+
+        if (!arena.hasPicked[msg.sender]) {
+            arena.hasPicked[msg.sender] = true;
+            arena.pickedCount++;
+        }
         arena.playerCards[msg.sender] = cardIndex;
         emit CardPicked(arenaId, msg.sender, cardIndex);
+
+        if (
+            arena.playerCount == arena.maxPlayers &&
+            arena.pickedCount == arena.playerCount
+        ) {
+            uint256 roundId = ++roundCount;
+            Round storage round = rounds[roundId];
+            round.roundId = roundId;
+            round.roundType = "arena";
+            round.arenaId = arenaId;
+            round.potUsdm = arena.betAmount * arena.playerCount;
+            round.createdAt = block.timestamp;
+            round.status = "created";
+            arena.roundId = roundId;
+
+            emit RoundCreated(roundId, "arena", arenaId, address(0), round.potUsdm);
+        }
     }
 
 
@@ -258,9 +301,7 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
 
         _takeBet(msg.sender, betAmount);
 
-        roundId = uint256(
-            keccak256(abi.encodePacked(block.timestamp, msg.sender, blockhash(block.number - 1)))
-        );
+        roundId = ++roundCount;
 
         Round storage round = rounds[roundId];
         round.roundId = roundId;
@@ -269,6 +310,8 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         round.potUsdm = betAmount;
         round.createdAt = block.timestamp;
         round.status = "created";
+
+        emit RoundCreated(roundId, "solo", 0, msg.sender, betAmount);
     }
 
     function pickSoloCard(uint256 gameId, uint8 cardIndex)
@@ -286,20 +329,24 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
             "game ended"
         );
 
-        emit SoloPlayed(msg.sender, round.potUsdm, cardIndex, gameId);
+        require(
+            keccak256(abi.encode(round.status)) == keccak256(abi.encode("created")),
+            "invalid round state"
+        );
 
-        // Request VRF for this round
-        _requestVRF(gameId);
+        round.selectedCard = cardIndex;
+        emit SoloPlayed(msg.sender, round.potUsdm, cardIndex, gameId);
     }
 
 
-    // ============= VRF INTEGRATION =============
+    // ============= WITNET RANDOMNESS =============
 
-    /**
-     * @notice Request random words from Chainlink VRF v2.5
-     * @param roundId The round ID to associate with this VRF request
-     */
-    function _requestVRF(uint256 roundId) internal {
+    function requestRandomness(uint256 roundId)
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+    {
         Round storage round = rounds[roundId];
         require(round.roundId != 0, "round not found");
         require(
@@ -307,100 +354,77 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
             "invalid round state"
         );
 
-        // Request 1 random word (will return uint256 we use to generate cards)
-        uint256 requestId = s_vrfCoordinator.requestRandomWords(
-            VRFV2PlusClient.RandomWordsRequest({
-                keyHash: keyHash,
-                subId: s_subscriptionId,
-                requestConfirmations: 3,
-                callbackGasLimit: 200000,
-                numWords: 1,
-                extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
-                )
-            })
-        );
+        uint256 celoPaid = witnet.estimateRandomizeFee(tx.gasprice);
+        require(msg.value >= celoPaid, "insufficient CELO");
+        uint256 requestBlock = witnet.randomize{value: celoPaid}();
 
-        round.vrfRequestId = requestId;
-        round.status = "vrfRequested";
-
-        vrfRequests[requestId] = VRFRequest({
-            requestId: requestId,
+        randomnessRequests[roundId] = RandomnessRequest({
             roundId: roundId,
+            requestBlock: requestBlock,
             requestedAt: block.timestamp,
-            fulfilled: false,
-            vrfRandom: bytes32(0)
+            celoPaid: celoPaid,
+            fulfilled: false
         });
+        round.status = "randomnessRequested";
 
-        roundVrfMap[roundId] = requestId;
-
-        emit VRFRequested(roundId, requestId, msg.sender);
-    }
-
-    /**
-     * @notice Chainlink VRF callback - generates card values from randomness
-     * @param requestId The VRF request ID
-     * @param randomWords Array of random words (we use randomWords[0])
-     */
-    function fulfillRandomWords(
-        uint256 requestId,
-        uint256[] calldata randomWords
-    ) internal override {
-        require(randomWords.length > 0, "no random words");
-
-        VRFRequest storage vrfReq = vrfRequests[requestId];
-        require(vrfReq.roundId != 0, "request not found");
-
-        uint256 roundId = vrfReq.roundId;
-        Round storage round = rounds[roundId];
-
-        // Store raw VRF random value
-        vrfReq.vrfRandom = bytes32(randomWords[0]);
-        vrfReq.fulfilled = true;
-        round.vrfRandom = bytes32(randomWords[0]);
-        round.status = "revealed";
-
-        // Generate 2-4 card values (1-100) from the random word
-        uint256[] memory cardValues = new uint256[](4);
-        uint256 randomValue = randomWords[0];
-
-        for (uint256 i = 0; i < 4; i++) {
-            // Extract different bytes from the random value
-            uint256 card = (randomValue >> (i * 64)) % 100 + 1;
-            cardValues[i] = card;
+        uint256 unusedCelo = msg.value - celoPaid;
+        if (unusedCelo > 0) {
+            (bool refunded, ) = payable(msg.sender).call{value: unusedCelo}("");
+            require(refunded, "CELO refund failed");
         }
 
-        round.numbers = cardValues;
-
-        // Compute commit hash for post-round verification
-        bytes32 commitHash = keccak256(abi.encode(bytes32(randomWords[0]), cardValues));
-        round.commitHash = commitHash;
-
-        emit CommitRevealed(roundId, commitHash, bytes32(randomWords[0]));
+        emit RandomnessRequested(roundId, requestBlock, msg.sender, celoPaid);
     }
 
-    /**
-     * @notice Check if a VRF request has timed out and trigger refund if needed
-     * @param roundId The round ID to check
-     */
-    function checkVRFTimeout(uint256 roundId) external nonReentrant {
+    function fetchRandomness(uint256 roundId) external nonReentrant {
+        Round storage round = rounds[roundId];
+        require(round.roundId != 0, "round not found");
+        require(
+            keccak256(abi.encode(round.status)) ==
+                keccak256(abi.encode("randomnessRequested")),
+            "randomness not requested"
+        );
+
+        RandomnessRequest storage request = randomnessRequests[roundId];
+        require(!request.fulfilled, "randomness already fetched");
+        require(witnet.isRandomized(request.requestBlock), "randomness unavailable");
+
+        bytes32 randomness = witnet.getRandomnessAfter(request.requestBlock);
+        uint256[] memory cardValues = new uint256[](4);
+
+        for (uint256 cardIndex = 0; cardIndex < 4; cardIndex++) {
+            uint256 nonce = uint256(keccak256(abi.encode(roundId, cardIndex)));
+            cardValues[cardIndex] =
+                1 +
+                witnet.random(100, nonce, request.requestBlock);
+        }
+
+        request.fulfilled = true;
+        round.randomness = randomness;
+        round.numbers = cardValues;
+        round.commitHash = keccak256(abi.encode(randomness, cardValues));
+        round.status = "revealed";
+
+        emit RandomnessRevealed(roundId, round.commitHash, randomness);
+    }
+
+    function checkRandomnessTimeout(uint256 roundId) external nonReentrant {
         Round storage round = rounds[roundId];
         require(round.roundId != 0, "round not found");
 
-        if (keccak256(abi.encode(round.status)) != keccak256(abi.encode("vrfRequested"))) {
-            return; // Not waiting for VRF
-        }
-
-        uint256 vrfRequestId = round.vrfRequestId;
-        VRFRequest storage vrfReq = vrfRequests[vrfRequestId];
-
         require(
-            block.timestamp >= vrfReq.requestedAt + vrfRequestTimeout,
+            keccak256(abi.encode(round.status)) ==
+                keccak256(abi.encode("randomnessRequested")),
+            "randomness not pending"
+        );
+        RandomnessRequest storage request = randomnessRequests[roundId];
+        require(
+            block.timestamp >= request.requestedAt + RANDOMNESS_TIMEOUT,
             "timeout not reached"
         );
 
-        emit VRFTimeoutTriggered(roundId, vrfRequestId);
-        _refundRound(roundId, "VRF timeout");
+        emit RandomnessTimeoutTriggered(roundId, request.requestBlock);
+        _refundRound(roundId, "randomness timeout");
     }
 
     /**
@@ -411,18 +435,14 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         return rounds[roundId].commitHash;
     }
 
-    /**
-     * @notice Get VRF random value for a round (revealed only)
-     * @param roundId The round ID
-     */
-    function getVRFRandom(uint256 roundId) external view returns (bytes32) {
+    function getRandomness(uint256 roundId) external view returns (bytes32) {
         Round storage round = rounds[roundId];
         require(
             keccak256(abi.encode(round.status)) == keccak256(abi.encode("revealed")) ||
             keccak256(abi.encode(round.status)) == keccak256(abi.encode("completed")),
-            "vrf not revealed"
+            "randomness not revealed"
         );
-        return round.vrfRandom;
+        return round.randomness;
     }
 
     // ============= SEED REVEAL & FAIRNESS =============
@@ -444,15 +464,8 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
 
     // ============= SETTLEMENT & PAYOUT =============
 
-    /**
-     * @notice Settle an arena or solo round with winner determination
-     * Only called after VRF fulfillment and card reveal
-     * Arena: 95% to winner, 5% to owner
-     * Solo: 1.95x payout (2.5% house edge)
-     */
-    function settleRound(uint256 roundId, address winner)
+    function settleRound(uint256 roundId)
         external
-        onlyOwner
         nonReentrant
     {
         Round storage round = rounds[roundId];
@@ -461,31 +474,54 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
             keccak256(abi.encode(round.status)) == keccak256(abi.encode("revealed")),
             "round not revealed"
         );
-        require(winner != address(0), "invalid winner");
-
-        round.winnerAddress = winner;
-        round.status = "completed";
-
         uint256 payout;
+        address winner;
 
         if (
             keccak256(abi.encode(round.roundType)) == keccak256(abi.encode("arena"))
         ) {
-            // Arena: 95% to winner, 5% to owner
-            uint256 totalPot = round.potUsdm;
-            payout = (totalPot * 95) / 100;
-            uint256 ownerFee = totalPot - payout;
+            Arena storage arena = arenas[round.arenaId];
+            winner = arena.players[0];
+            uint256 highestValue = round.numbers[arena.playerCards[winner]];
+
+            for (uint256 i = 1; i < arena.players.length; i++) {
+                address player = arena.players[i];
+                uint256 selectedValue = round.numbers[arena.playerCards[player]];
+                if (selectedValue > highestValue) {
+                    highestValue = selectedValue;
+                    winner = player;
+                }
+            }
+
+            payout = (round.potUsdm * 95) / 100;
+            uint256 ownerFee = round.potUsdm - payout;
+            round.winnerAddress = winner;
+            round.status = "completed";
+            arena.winner = winner;
+            arena.settled = true;
 
             require(usdm.transfer(winner, payout), "winner transfer failed");
             require(usdm.transfer(owner(), ownerFee), "owner fee transfer failed");
+            playerStats[winner].totalWonUsdm += payout;
         } else {
-            // Solo: 1.95x payout (2.5% house edge, 2.5% winner gets 1.95x)
-            payout = (round.potUsdm * 195) / 100; // 1.95x
+            if (round.numbers[round.selectedCard] >= round.numbers[1 - round.selectedCard]) {
+                winner = round.player;
+                payout = (round.potUsdm * 195) / 100;
+                round.winnerAddress = winner;
+                round.status = "completed";
 
-            require(usdm.transfer(winner, payout), "solo payout failed");
+                require(usdm.transfer(winner, payout), "solo payout failed");
+                playerStats[winner].totalWonUsdm += payout;
+            } else {
+                winner = owner();
+                payout = round.potUsdm;
+                round.winnerAddress = winner;
+                round.status = "completed";
+
+                require(usdm.transfer(winner, payout), "solo loss transfer failed");
+            }
         }
 
-        playerStats[winner].totalWonUsdm += payout;
         emit WinnerPaid(roundId, winner, payout, "settlement");
     }
 
@@ -506,33 +542,44 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         if (keccak256(abi.encode(round.roundType)) == keccak256(abi.encode("solo"))) {
             require(usdm.transfer(round.player, round.potUsdm), "refund failed");
             emit RefundProcessed(roundId, round.player, round.potUsdm, reason);
-        } else {
-            // Arena refund to all players
-            Arena storage arena = arenas[round.arenaId];
-            for (uint256 i = 0; i < arena.players.length; i++) {
-                require(usdm.transfer(arena.players[i], round.potUsdm), "arena refund failed");
-                emit RefundProcessed(roundId, arena.players[i], round.potUsdm, reason);
-            }
+            return;
         }
+
+        _refundAllArena(roundId, reason);
     }
 
-    /**
-     * @notice Emergency refund all players in an arena (owner-only, for emergencies)
-     */
-    function refundAllArena(uint256 arenaId) external onlyOwner nonReentrant {
-        Arena storage arena = arenas[arenaId];
-        require(arena.arenaId != 0, "arena not found");
+    function _refundAllArena(uint256 roundId, string memory reason) internal {
+        Round storage round = rounds[roundId];
+        Arena storage arena = arenas[round.arenaId];
 
         for (uint256 i = 0; i < arena.players.length; i++) {
             address player = arena.players[i];
             require(
                 usdm.transfer(player, arena.betAmount),
-                "refund failed"
+                "arena refund failed"
             );
-            emit RefundProcessed(0, player, arena.betAmount, "emergency arena refund");
+            emit RefundProcessed(roundId, player, arena.betAmount, reason);
         }
 
         arena.settled = true;
+    }
+
+    function emergencyRefundRound(uint256 roundId)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        Round storage round = rounds[roundId];
+        require(round.roundId != 0, "round not found");
+        require(
+            keccak256(abi.encode(round.status)) ==
+                keccak256(abi.encode("created")) ||
+                keccak256(abi.encode(round.status)) ==
+                keccak256(abi.encode("randomnessRequested")),
+            "round not refundable"
+        );
+
+        _refundRound(roundId, "emergency randomness refund");
     }
 
     // ============= ADMIN FUNCTIONS =============
@@ -580,12 +627,6 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         cooldownDuration = duration;
         lossesBeforeCooldown = losses;
     }
-
-    function setVRFTimeout(uint256 timeoutSeconds) external onlyOwner {
-        require(timeoutSeconds > 60, "timeout too short");
-        vrfRequestTimeout = timeoutSeconds;
-    }
-
 
     // ============= INTERNAL FUNCTIONS =============
 
@@ -675,11 +716,11 @@ contract Xolat is ReentrancyGuard, Pausable, VRFConsumerBaseV2Plus {
         return blacklist[player];
     }
 
-    function getVRFRequest(uint256 requestId)
+    function getRandomnessRequest(uint256 roundId)
         external
         view
-        returns (VRFRequest memory)
+        returns (RandomnessRequest memory)
     {
-        return vrfRequests[requestId];
+        return randomnessRequests[roundId];
     }
 }

@@ -7,6 +7,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 describe("Xolat.sol", function () {
   let xolat: Xolat;
   let usdm: any;
+  let witnet: any;
   let owner: HardhatEthersSigner;
   let p1: HardhatEthersSigner;
   let p2: HardhatEthersSigner;
@@ -17,9 +18,7 @@ describe("Xolat.sol", function () {
   const MAX_TX = ethers.parseUnits("20", 18);
   const MAX_DAY = ethers.parseUnits("100", 18);
 
-  const VRF_COORD = "0xd89b25491e4eb9b61ef1427d44541872d8160b1a";
-  const KEY = "0x60cd629669c2cc0fa6eac7e5fab989f51991b01d6d56986d110ac9fa59e33406";
-  const SUB = 100n;
+  const ORACLE_FEE = ethers.parseEther("0.01");
 
   before(async function () {
     [owner, p1, p2, p3] = await ethers.getSigners();
@@ -33,8 +32,12 @@ describe("Xolat.sol", function () {
       await usdm.connect(p).approve(await usdm.getAddress(), ethers.MaxUint256);
     }
 
+    const Witnet = await ethers.getContractFactory("MockWitnetRandomness");
+    witnet = await Witnet.deploy(ORACLE_FEE);
+    await witnet.waitForDeployment();
+
     const XL = await ethers.getContractFactory("Xolat");
-    xolat = await XL.deploy(await usdm.getAddress(), VRF_COORD, KEY, SUB);
+    xolat = await XL.deploy(await usdm.getAddress(), await witnet.getAddress());
     await xolat.waitForDeployment();
 
     for (const p of [owner, p1, p2, p3]) {
@@ -45,21 +48,21 @@ describe("Xolat.sol", function () {
   describe("Setup", function () {
     it("Deploys correctly", async function () {
       expect(await xolat.owner()).to.equal(owner.address);
-      expect(await xolat.keyHash()).to.equal(KEY);
+      expect(await xolat.witnet()).to.equal(await witnet.getAddress());
       expect(await xolat.maxBetPerTx()).to.equal(MAX_TX);
       expect(await xolat.maxBetPerDay()).to.equal(MAX_DAY);
     });
   });
 
   describe("Arena Mode", function () {
-    it("Creates arena with 2-6 players", async function () {
+    it("Creates arena with 2-4 players", async function () {
       await xolat.connect(p1).createArena(BET, 4);
       expect(await xolat.arenaCount()).to.equal(1);
     });
 
-    it("Rejects <2 or >6 players", async function () {
-      await expect(xolat.connect(p1).createArena(BET, 1)).to.be.revertedWith("invalid player count");
-      await expect(xolat.connect(p1).createArena(BET, 7)).to.be.revertedWith("invalid player count");
+    it("Rejects fewer than 2 or more than 4 players", async function () {
+      await expect(xolat.connect(p1).createArena(BET, 1)).to.be.revertedWith("player count must be 2-4");
+      await expect(xolat.connect(p1).createArena(BET, 5)).to.be.revertedWith("player count must be 2-4");
     });
 
     it("Rejects 0 bet", async function () {
@@ -193,7 +196,7 @@ describe("Xolat.sol", function () {
 
     it("Non-owner cannot set limits", async function () {
       await expect(xolat.connect(p1).setMaxBet(MAX_TX, MAX_DAY))
-        .to.be.revertedWith("Only callable by owner");
+        .to.be.revertedWithCustomError(xolat, "OwnableUnauthorizedAccount");
     });
   });
 
@@ -284,13 +287,13 @@ describe("Xolat.sol", function () {
 
     it("Non-owner cannot pause", async function () {
       await expect(xolat.connect(p1).pause())
-        .to.be.revertedWith("Only callable by owner");
+        .to.be.revertedWithCustomError(xolat, "OwnableUnauthorizedAccount");
     });
 
     it("Non-owner cannot unpause", async function () {
       await xolat.connect(owner).pause();
       await expect(xolat.connect(p1).unpause())
-        .to.be.revertedWith("Only callable by owner");
+        .to.be.revertedWithCustomError(xolat, "OwnableUnauthorizedAccount");
       await xolat.connect(owner).unpause();
     });
 
@@ -302,20 +305,36 @@ describe("Xolat.sol", function () {
 
     it("Non-owner cannot ban", async function () {
       await expect(xolat.connect(p1).ban(p2.address))
-        .to.be.revertedWith("Only callable by owner");
+        .to.be.revertedWithCustomError(xolat, "OwnableUnauthorizedAccount");
     });
 
-    it("Owner can refund arena", async function () {
+    it("Owner can emergency-refund a pending arena round", async function () {
       await xolat.connect(p1).createArena(BET, 2);
       const id = await xolat.arenaCount();
-      await xolat.connect(owner).refundAllArena(id);
+      await xolat.connect(p2).joinArena(id);
+      await xolat.connect(p1).pickCard(id, 0);
+      await xolat.connect(p2).pickCard(id, 1);
+      const roundId = await xolat.roundCount();
+      await xolat.connect(owner).requestRandomness(roundId, { value: ORACLE_FEE });
+      await xolat.connect(owner).emergencyRefundRound(roundId);
+      expect((await xolat.getRound(roundId)).status).to.equal("refunded");
     });
 
-    it("Non-owner cannot refund arena", async function () {
-      await xolat.connect(p1).createArena(BET, 2);
-      const id = await xolat.arenaCount();
-      await expect(xolat.connect(p2).refundAllArena(id))
-        .to.be.revertedWith("Only callable by owner");
+    it("Owner can emergency-refund a created round before randomness is requested", async function () {
+      const balanceBefore = await usdm.balanceOf(p3.address);
+      await xolat.connect(p3).startSoloGame(BET);
+      const roundId = await xolat.roundCount();
+
+      expect((await xolat.getRound(roundId)).status).to.equal("created");
+      await xolat.connect(owner).emergencyRefundRound(roundId);
+
+      expect((await xolat.getRound(roundId)).status).to.equal("refunded");
+      expect(await usdm.balanceOf(p3.address)).to.equal(balanceBefore);
+    });
+
+    it("Non-owner cannot emergency-refund a round", async function () {
+      await expect(xolat.connect(p2).emergencyRefundRound(1))
+        .to.be.revertedWithCustomError(xolat, "OwnableUnauthorizedAccount");
     });
   });
 
@@ -334,27 +353,20 @@ describe("Xolat.sol", function () {
     });
   });
 
-  describe("VRF Config", function () {
-    it("Stores keyHash", async function () {
-      expect(await xolat.keyHash()).to.equal(KEY);
+  describe("Witnet Config", function () {
+    it("Stores the Witnet randomness contract", async function () {
+      expect(await xolat.witnet()).to.equal(await witnet.getAddress());
     });
 
-    it("Owner can set VRF timeout", async function () {
-      await xolat.connect(owner).setVRFTimeout(500);
-      expect(await xolat.vrfRequestTimeout()).to.equal(500);
-      await xolat.connect(owner).setVRFTimeout(300);
-    });
-
-    it("Rejects timeout < 60s", async function () {
-      await expect(xolat.connect(owner).setVRFTimeout(30))
-        .to.be.revertedWith("timeout too short");
+    it("Uses the fixed 20-minute randomness timeout", async function () {
+      expect(await xolat.RANDOMNESS_TIMEOUT()).to.equal(1200n);
     });
   });
 
   describe("Edge Cases", function () {
-    it("Rejects non-existent arena refund", async function () {
-      await expect(xolat.connect(owner).refundAllArena(9999))
-        .to.be.revertedWith("arena not found");
+    it("Rejects emergency refunds for non-existent rounds", async function () {
+      await expect(xolat.connect(owner).emergencyRefundRound(9999))
+        .to.be.revertedWith("round not found");
     });
 
     it("Handles new player stats", async function () {
