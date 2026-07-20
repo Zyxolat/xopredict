@@ -4,30 +4,30 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { playerAddress, referrerAddress } = await req.json();
+    const { playerId, referrerId } = await req.json();
 
-    // Validate addresses
-    const playerParsed = addressSchema.safeParse(playerAddress);
-    const referrerParsed = referrerAddress
-      ? addressSchema.safeParse(referrerAddress)
+    // Validate IDs
+    const playerParsed = playerIdSchema.safeParse(playerId);
+    const referrerParsed = referrerId
+      ? playerIdSchema.safeParse(referrerId)
       : { success: true, data: null };
 
-    if (!playerParsed.success || (referrerAddress && !referrerParsed.success)) {
-      return NextResponse.json({ error: "Invalid address format" }, { status: 400 });
+    if (!playerParsed.success || (referrerId && !referrerParsed.success)) {
+      return NextResponse.json({ error: "Invalid player ID format" }, { status: 400 });
     }
 
-    const player = playerParsed.data.toLowerCase();
-    const referrer = referrerParsed.data?.toLowerCase();
+    const player = playerParsed.data;
+    const referrer = referrerParsed.data;
 
     // Check if player already has a referrer
     const existingReferral = await prisma.referral.findUnique({
-      where: { refereeAddress: player },
+      where: { refereeId: player },
     });
 
     if (existingReferral) {
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     if (referrer) {
       // Verify referrer exists
       const referrerPlayer = await prisma.player.findUnique({
-        where: { address: referrer },
+        where: { id: referrer },
       });
 
       if (!referrerPlayer) {
@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
       // Create referral relationship
       const referral = await prisma.referral.create({
         data: {
-          referrerAddress: referrer,
-          refereeAddress: player,
+          referrerId: referrer,
+          refereeId: player,
           bonusClaimed: false,
         },
       });
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         data: {
           referralId: referral.id,
-          referrerAddress: referrer,
+          referrerId: referrer,
           bonusClaimed: false,
         },
       });
@@ -77,27 +77,27 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const address = req.nextUrl.searchParams.get("address");
-    if (!address) {
-      return NextResponse.json({ error: "Address required" }, { status: 400 });
+    const playerId = req.nextUrl.searchParams.get("playerId");
+    if (!playerId) {
+      return NextResponse.json({ error: "Player ID required" }, { status: 400 });
     }
 
-    const parsed = addressSchema.safeParse(address);
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const playerAddress = parsed.data.toLowerCase();
+    const pId = parsed.data;
 
     // Get referral info as referee
     const asReferre = await prisma.referral.findUnique({
-      where: { refereeAddress: playerAddress },
+      where: { refereeId: pId },
       include: { referrer: { select: { username: true } } },
     });
 
     // Get referrals made as referrer
     const asReferrer = await prisma.referral.findMany({
-      where: { referrerAddress: playerAddress },
+      where: { referrerId: pId },
       include: { referee: { select: { username: true } } },
     });
 
@@ -105,13 +105,13 @@ export async function GET(req: NextRequest) {
       data: {
         referrer: asReferre
           ? {
-              address: asReferre.referrerAddress,
+              playerId: asReferre.referrerId,
               username: asReferre.referrer.username,
               bonusClaimed: asReferre.bonusClaimed,
             }
           : null,
         referrals: asReferrer.map((r: typeof asReferrer[number]) => ({
-          address: r.refereeAddress,
+          playerId: r.refereeId,
           username: r.referee.username,
           bonusClaimed: r.bonusClaimed,
         })),

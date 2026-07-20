@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 import { LoadingState, EmptyState } from "@/components/state-displays";
+import { useEffect, useState } from "react";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -25,15 +27,39 @@ const rowVariants = {
   },
 };
 
-// TODO: Replace with real API call to /api/players/[address]/history
-const rounds = [
-  { id: "842", type: "Arena", result: "+42.75", status: "Won" },
-  { id: "841", type: "Solo", result: "-10.00", status: "Lost" },
-  { id: "840", type: "Arena", result: "+18.50", status: "Won" },
-];
+interface Round {
+  id: string;
+  type: "Arena" | "Solo";
+  result: string;
+  status: "Won" | "Lost";
+}
 
 export default function HistoryPage() {
-  const loading = false;
+  const { data: session } = useSession();
+  const [rounds, setRounds] = useState<Round[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const fetchHistory = async () => {
+      try {
+        // TODO: Replace with real API call to /api/players/[playerId]/history
+        const mockRounds: Round[] = [
+          { id: "842", type: "Arena", result: "+42.75", status: "Won" },
+          { id: "841", type: "Solo", result: "-10.00", status: "Lost" },
+          { id: "840", type: "Arena", result: "+18.50", status: "Won" },
+        ];
+        setRounds(mockRounds);
+      } catch (error) {
+        console.error("Failed to fetch history:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchHistory();
+  }, [session?.user?.id]);
 
   if (loading) {
     return (

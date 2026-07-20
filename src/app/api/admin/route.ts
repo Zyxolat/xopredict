@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,45 +23,45 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { action, address } = await req.json();
+    const { action, playerId } = await req.json();
 
     switch (action) {
       case "ban": {
-        const parsed = addressSchema.safeParse(address);
+        const parsed = playerIdSchema.safeParse(playerId);
         if (!parsed.success) {
-          return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+          return NextResponse.json({ error: "Invalid Player ID" }, { status: 400 });
         }
 
         const player = await prisma.player.update({
-          where: { address: parsed.data.toLowerCase() },
+          where: { id: parsed.data },
           data: { isBanned: true },
         });
 
         return NextResponse.json({
-          data: { message: "Player banned", address: player.address },
+          data: { message: "Player banned", id: player.id },
         });
       }
 
       case "unban": {
-        const parsed = addressSchema.safeParse(address);
+        const parsed = playerIdSchema.safeParse(playerId);
         if (!parsed.success) {
-          return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+          return NextResponse.json({ error: "Invalid Player ID" }, { status: 400 });
         }
 
         const player = await prisma.player.update({
-          where: { address: parsed.data.toLowerCase() },
+          where: { id: parsed.data },
           data: { isBanned: false },
         });
 
         return NextResponse.json({
-          data: { message: "Player unbanned", address: player.address },
+          data: { message: "Player unbanned", id: player.id },
         });
       }
 
       case "refund": {
-        const parsed = addressSchema.safeParse(address);
+        const parsed = playerIdSchema.safeParse(playerId);
         if (!parsed.success) {
-          return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+          return NextResponse.json({ error: "Invalid Player ID" }, { status: 400 });
         }
 
         const { amount } = await req.json();
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         }
 
         const player = await prisma.player.findUnique({
-          where: { address: parsed.data.toLowerCase() },
+          where: { id: parsed.data },
         });
 
         if (!player) {
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
 
         // In production: transfer from treasury
         const updated = await prisma.player.update({
-          where: { address: parsed.data.toLowerCase() },
+          where: { id: parsed.data },
           data: {
             totalWonUsdm: player.totalWonUsdm.plus(amount),
           },
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           data: {
             message: "Refund issued",
-            address: updated.address,
+            id: updated.id,
             refundAmount: amount,
             newBalance: updated.totalWonUsdm,
           },

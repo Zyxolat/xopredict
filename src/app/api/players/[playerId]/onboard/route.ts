@@ -1,19 +1,19 @@
 /**
- * POST /api/players/[address]/onboard - Mark player as onboarded
+ * POST /api/players/[playerId]/onboard - Mark player as onboarded
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(
   request: Request,
-  { params }: { params: { address: string } }
+  { params }: { params: { playerId: string } }
 ) {
   try {
-    const address = params.address.toLowerCase();
+    const playerId = params.playerId;
 
     // Update player onboarded flag
     const player = await prisma.player.update({
-      where: { address },
+      where: { id: playerId },
       data: { onboarded: true },
     });
 

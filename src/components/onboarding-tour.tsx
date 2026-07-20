@@ -28,13 +28,13 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
   useEffect(() => {
     // Fetch player onboarded status
     const checkOnboarded = async () => {
-      if (!session?.user?.address) {
+      if (!session?.user?.playerId) {
         setPlayerOnboarded(null);
         return;
       }
 
       try {
-        const res = await fetch(`/api/players/${session.user.address}`);
+        const res = await fetch(`/api/players/${session.user!.playerId}`);
         if (res.ok) {
           const data = await res.json();
           setPlayerOnboarded(data.data?.onboarded || false);
@@ -45,15 +45,16 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
     };
 
     checkOnboarded();
-  }, [session]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.playerId]);
 
   useEffect(() => {
     // If user is logged in but not onboarded, mark them onboarded after 30 seconds
     // (assumes they've read through the page features)
-    if (session && playerOnboarded === false) {
+    if (session?.user?.playerId && playerOnboarded === false) {
       const timeout = setTimeout(async () => {
         try {
-          await fetch(`/api/players/${session.user.address}/onboard`, {
+          await fetch(`/api/players/${session.user!.playerId}/onboard`, {
             method: "POST",
           });
           setPlayerOnboarded(true);
@@ -65,7 +66,8 @@ export function OnboardingTour({ onComplete }: OnboardingTourProps) {
 
       return () => clearTimeout(timeout);
     }
-  }, [session, playerOnboarded, onComplete]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.playerId, playerOnboarded, onComplete]);
 
   return null; // Placeholder - full tour implementation via react-joyride v12
 }

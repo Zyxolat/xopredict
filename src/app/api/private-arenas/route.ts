@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ const ARENA_TIMEOUT_MS = 30 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
   try {
-    const address = req.nextUrl.searchParams.get("address");
+    const playerId = req.nextUrl.searchParams.get("playerId");
     const code = req.nextUrl.searchParams.get("code");
 
     if (code) {
@@ -52,33 +52,33 @@ export async function GET(req: NextRequest) {
         data: {
           arena: {
             id: arena.id,
-            creatorAddress: arena.creatorAddress,
+            creatorId: arena.creatorId,
             inviteCode: arena.inviteCode,
             betAmount: arena.betAmount.toString(),
             maxPlayers: arena.maxPlayers,
             currentPlayers: arena.currentPlayers,
             status: arena.status,
-            playerCount: arena.players.length,
+            playerCount: arena.playerIds.length,
           },
         },
       });
     }
 
-    if (!address) {
-      return NextResponse.json({ error: "Address required" }, { status: 400 });
+    if (!playerId) {
+      return NextResponse.json({ error: "Player ID required" }, { status: 400 });
     }
 
-    const parsed = addressSchema.safeParse(address);
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const playerAddress = parsed.data.toLowerCase();
+    const pId = parsed.data;
 
     // Get user's active arenas
     const userArenas = await prisma.privateArena.findMany({
       where: {
-        creatorAddress: playerAddress,
+        creatorId: pId,
         status: { in: ["active", "full"] },
       },
       orderBy: { createdAt: "desc" },
@@ -98,13 +98,13 @@ export async function GET(req: NextRequest) {
       .filter((a: typeof userArenas[number]) => now <= a.expiresAt)
       .map((arena: typeof userArenas[number]) => ({
         id: arena.id,
-        creatorAddress: arena.creatorAddress,
+        creatorId: arena.creatorId,
         inviteCode: arena.inviteCode,
         betAmount: arena.betAmount.toString(),
         maxPlayers: arena.maxPlayers,
         currentPlayers: arena.currentPlayers,
         status: arena.status,
-        playerCount: arena.players.length,
+        playerCount: arena.playerIds.length,
         createdAt: arena.createdAt,
       }));
 
@@ -122,16 +122,16 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { address, betAmount, maxPlayers } = await req.json();
+    const { playerId, betAmount, maxPlayers } = await req.json();
 
-    const parsed = addressSchema.safeParse(address);
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const playerAddress = parsed.data.toLowerCase();
+    const pId = parsed.data;
     const player = await prisma.player.findUnique({
-      where: { address: playerAddress },
+      where: { id: pId },
     });
 
     if (!player) {
@@ -162,13 +162,13 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(Date.now() + ARENA_TIMEOUT_MS);
     const arena = await prisma.privateArena.create({
       data: {
-        creatorAddress: playerAddress,
+        creatorId: pId,
         inviteCode,
         betAmount: betAmount.toString(),
         maxPlayers,
         currentPlayers: 1,
         status: "active",
-        players: [playerAddress], // Array of player addresses
+        playerIds: [pId], // Array of player addresses
         expiresAt,
       },
     });
@@ -178,13 +178,13 @@ export async function POST(req: NextRequest) {
         data: {
           arena: {
             id: arena.id,
-            creatorAddress: arena.creatorAddress,
+            creatorId: arena.creatorId,
             inviteCode: arena.inviteCode,
             betAmount: arena.betAmount.toString(),
             maxPlayers: arena.maxPlayers,
             currentPlayers: arena.currentPlayers,
             status: arena.status,
-            playerCount: arena.players.length,
+            playerCount: arena.playerIds.length,
             expiresAt: arena.expiresAt,
           },
           joinUrl: `${process.env.NEXT_PUBLIC_APP_URL || "https://xolat.game"}/arena?code=${inviteCode}`,

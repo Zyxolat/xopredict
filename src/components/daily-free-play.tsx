@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { useSession } from "next-auth/react";
 
 interface DailyFreePlayStatus {
   eligible: boolean;
@@ -12,17 +12,19 @@ interface DailyFreePlayStatus {
 }
 
 export function DailyFreePlay() {
-  const { address } = useAccount();
+  const { data: session } = useSession();
   const [status, setStatus] = useState<DailyFreePlayStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
 
   useEffect(() => {
-    if (!address) return;
+    if (!session?.user?.playerId) return;
 
     const fetchStatus = async () => {
       try {
-        const res = await fetch(`/api/daily-free-play?address=${address}`);
+        const res = await fetch("/api/daily-free-play", {
+          method: "GET",
+        });
         const data = await res.json();
         setStatus(data.data);
       } catch (error) {
@@ -33,17 +35,17 @@ export function DailyFreePlay() {
     };
 
     fetchStatus();
-  }, [address]);
+  }, [session?.user?.playerId]);
 
   const handleClaim = async () => {
-    if (!address || !status?.eligible) return;
+    if (!session?.user?.playerId || !status?.eligible) return;
 
     setClaiming(true);
     try {
       const res = await fetch("/api/daily-free-play", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ playerId: session.user!.playerId }),
       });
       const data = await res.json();
       if (res.ok) {

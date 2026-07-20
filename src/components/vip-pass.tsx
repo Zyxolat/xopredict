@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { useSession } from "next-auth/react";
 
 interface VIPPassInfo {
   active: boolean;
@@ -12,17 +12,17 @@ interface VIPPassInfo {
 }
 
 export function VIPPass() {
-  const { address } = useAccount();
+  const { data: session } = useSession();
   const [vipInfo, setVipInfo] = useState<VIPPassInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
 
   useEffect(() => {
-    if (!address) return;
+    if (!session?.user?.playerId) return;
 
     const fetchVIP = async () => {
       try {
-        const res = await fetch(`/api/vip?address=${address}`);
+        const res = await fetch(`/api/vip?playerId=${session.user!.playerId}`);
         const data = await res.json();
         setVipInfo(data.data);
       } catch (error) {
@@ -33,23 +33,23 @@ export function VIPPass() {
     };
 
     fetchVIP();
-  }, [address]);
+  }, [session?.user]);
 
   const handlePurchase = async () => {
-    if (!address) return;
+    if (!session?.user?.playerId) return;
 
     setPurchasing(true);
     try {
       const res = await fetch("/api/vip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({ playerId: session.user!.playerId }),
       });
 
       if (res.ok) {
         alert("VIP pass purchased! Enjoy premium benefits.");
         // Refresh VIP info
-        const res2 = await fetch(`/api/vip?address=${address}`);
+        const res2 = await fetch(`/api/vip?playerId=${session.user!.playerId}`);
         const data = await res2.json();
         setVipInfo(data.data);
       } else {

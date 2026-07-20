@@ -4,14 +4,16 @@ import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 declare module "next-auth" {
   interface User {
     id?: string;
     address?: string;
+    playerId?: string;
   }
   interface Session {
-    user?: User & { id?: string; address?: string };
+    user?: User & { id?: string; address?: string; playerId?: string };
   }
 }
 
@@ -27,40 +29,76 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.address = user.address;
+        token.playerId = user.playerId;
       }
-      
+
       // Handle OAuth account linking
       if (account) {
         token.provider = account.provider;
-        
+
         // For email/Google signups, try to find or create associated Player
         if (user?.email && !user.address) {
           // User signed in via Google or Email, not wallet
-          // Try to find existing Player by email
-          let player = await prisma.player.findUnique({
-            where: { email: user.email },
-          });
-          
-          if (!player) {
-            // Create Player record for non-wallet users
-            player = await prisma.player.create({
-              data: {
-                address: user.email, // Use email as placeholder address
-                email: user.email,
-              },
+          try {
+            // Check if email already in use by different Player
+            const existingByEmail = await prisma.player.findUnique({
+              where: { email: user.email },
             });
+
+            if (existingByEmail && existingByEmail.userId && existingByEmail.userId !== user.id) {
+              // Email already linked to a different User
+              throw new Error(
+                "Email already registered with another account. Please sign in with your original authentication method."
+              );
+            }
+
+            let player = existingByEmail;
+
+            if (!player) {
+              // New Google signup - create Player with email as placeholder
+              player = await prisma.player.create({
+                data: {
+                  address: null, // Google-first users start with null address
+                  email: user.email,
+                  userId: user.id,
+                },
+              });
+            } else if (!player.userId) {
+              // Wallet-first user adding Google email
+              player = await prisma.player.update({
+                where: { id: player.id },
+                data: {
+                  email: user.email,
+                  userId: user.id,
+                },
+              });
+            }
+
+            token.address = player.address; // May be null for Google-first
+            token.playerId = player.id;
+            token.id = user.id;
+          } catch (error) {
+            if (error instanceof Prisma.PrismaClientKnownRequestError) {
+              if (error.code === "P2002") {
+                // Unique constraint violation
+                console.error("Email unique constraint violation:", error);
+                throw new Error(
+                  "This email is already registered. Please use your original sign-in method."
+                );
+              }
+            }
+            throw error;
           }
-          
-          token.address = player.address;
         }
       }
-      
+
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.address = token.address as string;
+        session.user.playerId = token.playerId as string;
       }
       return session;
     },
@@ -137,6 +175,7 @@ export const authOptions: NextAuthOptions = {
             id: user.id,
             email: walletEmail,
             address: player.address,
+            playerId: player.id,
             name: player.address?.slice(0, 6) + "..." + player.address?.slice(-4),
           };
         } catch (error) {

@@ -20,7 +20,9 @@ enum CosmeticType {
 
 model Player {
   id                 String          @id @default(uuid())
-  address            String          @unique
+  userId             String?         @unique
+  user               User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  address            String?         @unique
   email              String?         @unique
   username           String?         @unique
   totalWonUsdm       Decimal         @default(0) @db.Decimal(36, 18)
@@ -39,6 +41,7 @@ model Player {
   cosmetics          CosmeticOwned[]
   referralsMade      Referral[]      @relation("referrer")
   referralReceived   Referral?       @relation("referee")
+  arenasCreated      PrivateArena[]
   @@map("players")
 }
 
@@ -63,24 +66,24 @@ model Round {
 }
 
 model Pick {
-  id            String @id @default(uuid())
-  roundId       String
-  playerAddress String
-  cardIndex     Int
-  value         Int?
-  round         Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  player        Player @relation(fields: [playerAddress], references: [address])
+  id        String @id @default(uuid())
+  roundId   String
+  playerId  String
+  cardIndex Int
+  value     Int?
+  round     Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  player    Player @relation(fields: [playerId], references: [id])
   @@map("picks")
 }
 
 model Referral {
-  id              String   @id @default(uuid())
-  referrerAddress String
-  refereeAddress  String   @unique
-  bonusClaimed    Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  referrer        Player   @relation("referrer", fields: [referrerAddress], references: [address])
-  referee         Player   @relation("referee", fields: [refereeAddress], references: [address])
+  id         String   @id @default(uuid())
+  referrerId String
+  refereeId  String   @unique
+  bonusClaimed Boolean @default(false)
+  createdAt  DateTime @default(now())
+  referrer   Player   @relation("referrer", fields: [referrerId], references: [id])
+  referee    Player   @relation("referee", fields: [refereeId], references: [id])
   @@map("referrals")
 }
 
@@ -95,37 +98,38 @@ model Season {
 }
 
 model SeasonXp {
-  id            String @id @default(uuid())
-  playerAddress String
-  seasonId      String
-  xp            Int    @default(0)
-  player        Player @relation(fields: [playerAddress], references: [address])
-  season        Season @relation(fields: [seasonId], references: [id])
-  @@unique([playerAddress, seasonId])
+  id       String @id @default(uuid())
+  playerId String
+  seasonId String
+  xp       Int    @default(0)
+  player   Player @relation(fields: [playerId], references: [id])
+  season   Season @relation(fields: [seasonId], references: [id])
+  @@unique([playerId, seasonId])
   @@map("season_xp")
 }
 
 model CosmeticOwned {
-  id            String       @id @default(uuid())
-  playerAddress String
-  type          CosmeticType
-  name          String
-  purchasedAt   DateTime     @default(now())
-  player        Player       @relation(fields: [playerAddress], references: [address])
+  id          String       @id @default(uuid())
+  playerId    String
+  type        CosmeticType
+  name        String
+  purchasedAt DateTime     @default(now())
+  player      Player       @relation(fields: [playerId], references: [id])
   @@map("cosmetics_owned")
 }
 
 model PrivateArena {
-  id              String   @id @default(uuid())
-  creatorAddress  String
-  inviteCode      String   @unique
-  betAmount       Decimal  @db.Decimal(36, 18)
-  maxPlayers      Int
-  currentPlayers  Int      @default(1)
-  status          String   @default("active") // active, full, completed
-  players         String[] // array of player addresses
-  createdAt       DateTime @default(now())
-  expiresAt       DateTime // 30 min timeout
+  id          String   @id @default(uuid())
+  creatorId   String
+  inviteCode  String   @unique
+  betAmount   Decimal  @db.Decimal(36, 18)
+  maxPlayers  Int
+  currentPlayers Int   @default(1)
+  status      String   @default("active") // active, full, completed
+  playerIds   String[] // array of player IDs (UUIDs)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime // 30 min timeout
+  creator     Player   @relation(fields: [creatorId], references: [id])
   @@map("private_arenas")
 }
 
@@ -138,6 +142,7 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
+  player        Player?
   @@map("users")
 }
 

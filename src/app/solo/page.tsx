@@ -2,33 +2,53 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 import { BetInput } from "@/components/bet-input";
 import { Card3D } from "@/components/card-3d";
 import { Confetti } from "@/components/confetti";
 import { EmptyState } from "@/components/state-displays";
+import { useUsdmBalance } from "@/lib/hooks/useUsdmBalance";
 
 export default function SoloPage() {
+  const { data: session } = useSession();
   const [bet, setBet] = useState("");
   const [picked, setPicked] = useState<number | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [loading, setLoading] = useState(false);
-  const balance = 2450.0;
+  const { balance, isLoading, isConnected } = useUsdmBalance();
 
   const play = async () => {
-    if (picked === null || !bet || revealed) return;
+    if (picked === null || !bet || revealed || !session?.user?.id) return;
     
     setLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setRevealed(true);
-    setLoading(false);
-    
-    // Show confetti on win (random)
-    if (Math.random() > 0.5) {
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 1000);
+    try {
+      // Call solo game API with playerId (user.id from session)
+      const res = await fetch("/api/solo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerId: session.user.id,
+          cardIndex: picked,
+          betAmount: bet,
+          roundId: BigInt(Date.now()),
+          transactionHash: "0x" + "0".repeat(64),
+        }),
+      });
+      
+      if (res.ok) {
+        setRevealed(true);
+        // Show confetti on win (random)
+        if (Math.random() > 0.5) {
+          setShowConfetti(true);
+          setTimeout(() => setShowConfetti(false), 1000);
+        }
+      }
+    } catch (error) {
+      console.error("Game error:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -51,6 +71,26 @@ export default function SoloPage() {
       transition: { duration: 0.6 },
     },
   };
+
+  if (!isConnected) {
+    return (
+      <AppShell title="Solo Prediction">
+        <section className="mx-auto max-w-2xl px-5 pt-8">
+          <EmptyState message="Connect your wallet to play!" />
+        </section>
+      </AppShell>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <AppShell title="Solo Prediction">
+        <section className="mx-auto max-w-2xl px-5 pt-8">
+          <EmptyState message="Loading balance..." />
+        </section>
+      </AppShell>
+    );
+  }
 
   if (!balance) {
     return (

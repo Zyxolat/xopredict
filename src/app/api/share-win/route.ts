@@ -57,8 +57,8 @@ export async function GET(req: NextRequest) {
             height: 630,
             backgroundColor: "#0a0e27",
             text: `I won ${amount} USDm on XOLAT`,
-            subText: "Play now at xolat.game",
-            badge: "⚡ XOLAT",
+            subText: "Play now at xopredict.game",
+            badge: "⚡ XOPREDICT",
           },
         },
       });

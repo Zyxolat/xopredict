@@ -8,21 +8,20 @@ import {
   calculateDailyMultiplier,
   calculateFreePlayAmount,
 } from "@/lib/gamification";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const { address } = await req.json();
-    const parsed = addressSchema.safeParse(address);
+    const { playerId } = await req.json();
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid Player ID" }, { status: 400 });
     }
 
-    const playerAddress = parsed.data.toLowerCase();
     const player = await prisma.player.findUnique({
-      where: { address: playerAddress },
+      where: { id: parsed.data },
     });
 
     if (!player) {
@@ -60,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     // Update player
     await prisma.player.update({
-      where: { address: playerAddress },
+      where: { id: parsed.data },
       data: {
         lastFreePlay: new Date(),
         streakDays: player.streakDays + 1,
@@ -83,18 +82,18 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const address = req.nextUrl.searchParams.get("address");
-    if (!address) {
-      return NextResponse.json({ error: "Address required" }, { status: 400 });
+    const playerId = req.nextUrl.searchParams.get("playerId");
+    if (!playerId) {
+      return NextResponse.json({ error: "Player ID required" }, { status: 400 });
     }
 
-    const parsed = addressSchema.safeParse(address);
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid Player ID" }, { status: 400 });
     }
 
     const player = await prisma.player.findUnique({
-      where: { address: parsed.data.toLowerCase() },
+      where: { id: parsed.data },
     });
 
     if (!player) {

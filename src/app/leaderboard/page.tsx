@@ -43,7 +43,7 @@ export default function LeaderboardPage() {
     const fetchLeaderboard = async () => {
       try {
         setLoading(true);
-        const res = await fetch("/api/leaderboard?type=overall&limit=10");
+        const res = await fetch("/api/leaderboard?type=overall&limit=100");
         if (!res.ok) throw new Error("Failed to fetch leaderboard");
         
         const json = await res.json();

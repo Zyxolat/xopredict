@@ -4,13 +4,13 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const address = req.nextUrl.searchParams.get("address");
+    const playerId = req.nextUrl.searchParams.get("playerId");
 
     // Get active seasons
     const activeSeason = await prisma.season.findFirst({
@@ -24,15 +24,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // If address provided, get player's XP
+    // If playerId provided, get player's XP
     let playerXP = null;
-    if (address) {
-      const parsed = addressSchema.safeParse(address);
+    if (playerId) {
+      const parsed = playerIdSchema.safeParse(playerId);
       if (parsed.success) {
         playerXP = await prisma.seasonXp.findUnique({
           where: {
-            playerAddress_seasonId: {
-              playerAddress: parsed.data.toLowerCase(),
+            playerId_seasonId: {
+              playerId: parsed.data,
               seasonId: activeSeason.id,
             },
           },
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
         playerXP,
         leaderboard: leaderboard.map((entry: typeof leaderboard[number], idx: number) => ({
           rank: idx + 1,
-          playerAddress: entry.playerAddress,
+          playerId: entry.playerId,
           username: entry.player.username,
           playerRank: entry.player.rank,
           xp: entry.xp,

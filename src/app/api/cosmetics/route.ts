@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 import { getCosmeticPrice, validateCosmeticPurchase } from "@/lib/gamification";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ const SHOP_ITEMS = [
 
 export async function GET(req: NextRequest) {
   try {
-    const address = req.nextUrl.searchParams.get("address");
+    const playerId = req.nextUrl.searchParams.get("playerId");
 
     // Get shop
     const shop = SHOP_ITEMS.map((item) => ({
@@ -29,12 +29,12 @@ export async function GET(req: NextRequest) {
     }));
 
     // If address provided, get owned cosmetics
-    let owned: Array<{ id: string; playerAddress: string; type: string; name: string; purchasedAt: Date }> = [];
-    if (address) {
-      const parsed = addressSchema.safeParse(address);
+    let owned: Array<{ id: string; playerId: string; type: string; name: string; purchasedAt: Date }> = [];
+    if (playerId) {
+      const parsed = playerIdSchema.safeParse(playerId);
       if (parsed.success) {
         owned = await prisma.cosmeticOwned.findMany({
-          where: { playerAddress: parsed.data.toLowerCase() },
+          where: { playerId: parsed.data },
         });
       }
     }
@@ -50,18 +50,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { address, type, name } = await req.json();
+    const { playerId, type, name } = await req.json();
 
-    const parsed = addressSchema.safeParse(address);
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const playerAddress = parsed.data.toLowerCase();
+    const pId = parsed.data;
 
     // Get player
     const player = await prisma.player.findUnique({
-      where: { address: playerAddress },
+      where: { id: pId },
     });
 
     if (!player) {
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     // Check if already owned
     const alreadyOwned = await prisma.cosmeticOwned.findFirst({
-      where: { playerAddress, type, name },
+      where: { playerId: pId, type, name },
     });
 
     if (alreadyOwned) {
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     // Create cosmetic purchase record
     const cosmetic = await prisma.cosmeticOwned.create({
       data: {
-        playerAddress,
+        playerId: pId,
         type,
         name,
       },

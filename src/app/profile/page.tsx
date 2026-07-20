@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 
 const containerVariants = {
@@ -25,6 +26,18 @@ const itemVariants = {
 };
 
 export default function ProfilePage() {
+  const { data: session } = useSession();
+
+  if (!session?.user) {
+    return (
+      <AppShell title="Player Profile">
+        <section className="mx-auto max-w-2xl px-5 pt-7">
+          <p className="text-slate-400">Please sign in to view your profile.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell title="Player Profile">
       <motion.section
@@ -38,9 +51,9 @@ export default function ProfilePage() {
           variants={itemVariants}
         >
           <p className="font-mono text-xs tracking-[.18em]">CONNECTED PLAYER</p>
-          <h2 className="mt-3 text-3xl font-bold">0x7A3...9F10</h2>
+          <h2 className="mt-3 text-3xl font-bold">{session.user.name || "User"}</h2>
           <span className="mt-5 inline-block rounded-full bg-[#d5a7ff]/20 px-4 py-2 font-mono text-sm text-[#d5a7ff]">
-            DIAMOND RANK
+            PLAYER ID: {session.user.id?.slice(0, 8)}...
           </span>
         </motion.div>
 

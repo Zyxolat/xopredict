@@ -53,13 +53,13 @@ export async function GET(req: NextRequest) {
           const bCard = b.cardIndex;
           return computedNumbers[bCard] - computedNumbers[aCard];
         });
-        winnerAddress = picks[0].playerAddress;
+        winnerAddress = picks[0].playerId;
       }
     } else if (round.type === "solo") {
       // In solo: match card index to highest value
       const pick = round.picks[0];
       if (pick && computedNumbers[pick.cardIndex] >= computedNumbers[1 - pick.cardIndex]) {
-        winnerAddress = pick.playerAddress;
+        winnerAddress = pick.playerId;
       }
     }
 
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
         isValid,
         winnerAddress,
         picks: round.picks.map((p: typeof round.picks[number]) => ({
-          playerAddress: p.playerAddress,
+          playerAddress: p.playerId,
           cardIndex: p.cardIndex,
           value: p.value,
         })),

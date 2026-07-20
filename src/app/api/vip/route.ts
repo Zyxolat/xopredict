@@ -4,13 +4,13 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 import { Decimal } from "@prisma/client/runtime/library";
 
 const VIP_PASS_PRICE = 10; // 10 USDm/month
 const VIP_DURATION_DAYS = 30;
 interface VipPass {
-  address: string;
+  playerId: string;
   active: boolean;
   expiresAt: Date | null;
   fee: number;
@@ -19,9 +19,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const address = req.nextUrl.searchParams.get("address");
+    const playerId = req.nextUrl.searchParams.get("playerId");
 
-    if (!address) {
+    if (!playerId) {
       return NextResponse.json({
         data: {
           vipPass: null,
@@ -36,14 +36,14 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const parsed = addressSchema.safeParse(address);
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const playerAddress = parsed.data.toLowerCase();
+    const pId = parsed.data;
     const player = await prisma.player.findUnique({
-      where: { address: playerAddress },
+      where: { id: pId },
     });
 
     if (!player) {
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     const isVipActive = player.vipExpiresAt && player.vipExpiresAt > now;
 
     const vipPass: VipPass = {
-      address: playerAddress,
+      playerId: pId,
       active: isVipActive || false,
       expiresAt: player.vipExpiresAt,
       fee: isVipActive ? 0 : 5, // VIP = 0% fee, non-VIP = 5% fee on bets
@@ -81,16 +81,16 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { address } = await req.json();
+    const { playerId } = await req.json();
 
-    const parsed = addressSchema.safeParse(address);
+    const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const playerAddress = parsed.data.toLowerCase();
+    const pId = parsed.data;
     const player = await prisma.player.findUnique({
-      where: { address: playerAddress },
+      where: { id: pId },
     });
 
     if (!player) {
@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
 
     // Update player with VIP expiry and deduct cost
     const updated = await prisma.player.update({
-      where: { address: playerAddress },
+      where: { id: pId },
       data: {
         vipExpiresAt: expiresAt,
         totalWonUsdm: player.totalWonUsdm.sub(new Decimal(VIP_PASS_PRICE)),

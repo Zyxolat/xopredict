@@ -34,13 +34,13 @@ export function extractReferrer(searchParams: URLSearchParams): string | null {
  * Both parties get 1 USDm bonus
  */
 export async function awardReferralBonus(
-  referrerAddress: string,
-  refereeAddress: string
+  referrerId: string,
+  refereeId: string
 ): Promise<{ success: boolean; reason?: string }> {
   try {
     // Get referrer player
     const referrer = await prisma.player.findUnique({
-      where: { address: referrerAddress.toLowerCase() },
+      where: { id: referrerId },
     });
 
     if (!referrer) {
@@ -49,7 +49,7 @@ export async function awardReferralBonus(
 
     // Get referee player
     const referee = await prisma.player.findUnique({
-      where: { address: refereeAddress.toLowerCase() },
+      where: { id: refereeId },
     });
 
     if (!referee) {
@@ -57,8 +57,8 @@ export async function awardReferralBonus(
     }
 
     // Check if bonus already claimed
-    const referral = await prisma.referral.findUnique({
-      where: { refereeAddress: refereeAddress.toLowerCase() },
+    const referral = await prisma.referral.findFirst({
+      where: { refereeId: refereeId },
     });
 
     if (referral?.bonusClaimed) {
@@ -69,13 +69,13 @@ export async function awardReferralBonus(
     // This represents treasury transfer
     await Promise.all([
       prisma.player.update({
-        where: { address: referrerAddress.toLowerCase() },
+        where: { id: referrerId },
         data: {
           totalWonUsdm: referrer.totalWonUsdm.add(new Decimal(REFERRAL_BONUS)),
         },
       }),
       prisma.player.update({
-        where: { address: refereeAddress.toLowerCase() },
+        where: { id: refereeId },
         data: {
           totalWonUsdm: referee.totalWonUsdm.add(new Decimal(REFERRAL_BONUS)),
         },

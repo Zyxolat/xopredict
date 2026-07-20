@@ -19,4 +19,4 @@ The health endpoint is available at `/api/health`.
 
 ## Smart-contract safety
 
-⚠️ **AUDIT WARNING** — `contracts/Xolat.sol` is a UI and integration scaffold, not a production-ready custody contract. It has not been audited and does not contain a complete randomness, settlement, player tracking, or refund implementation. Do not deploy it to a live network or accept user deposits until the contract has been independently audited and production settlement logic is complete.
+`contracts/Xolat.sol` is a UI and integration scaffold, not a production-ready custody contract. It has not been audited and does not contain a complete randomness, settlement, player tracking, or refund implementation. Do not deploy it to a live network or accept user deposits until the contract has been independently audited and production settlement logic is complete.

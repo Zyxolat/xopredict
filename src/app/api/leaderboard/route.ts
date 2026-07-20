@@ -9,7 +9,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { addressSchema } from "@/lib/validation";
+import { playerIdSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       1000
     );
     const offset = parseInt(req.nextUrl.searchParams.get("offset") || "0");
-    const address = req.nextUrl.searchParams.get("address");
+    const playerId = req.nextUrl.searchParams.get("playerId");
     const seasonId = req.nextUrl.searchParams.get("seasonId");
 
     if (type === "overall") {
@@ -47,23 +47,23 @@ export async function GET(req: NextRequest) {
         totalWonUsdm: Number(player.totalWonUsdm),
       }));
 
-      // Get player's rank if address provided
+      // Get player's rank if playerId provided
       let playerRank = null;
-      if (address) {
-        const parsed = addressSchema.safeParse(address);
+      if (playerId) {
+        const parsed = playerIdSchema.safeParse(playerId);
         if (parsed.success) {
           const allPlayers = await prisma.player.findMany({
             where: { isBanned: false },
-            select: { address: true, totalWonUsdm: true, createdAt: true },
+            select: { id: true, totalWonUsdm: true, createdAt: true },
             orderBy: [{ totalWonUsdm: "desc" }, { createdAt: "asc" }],
           });
 
           const playerIdx = allPlayers.findIndex(
-            (p) => p.address.toLowerCase() === parsed.data.toLowerCase()
+            (p) => p.id === parsed.data
           );
           if (playerIdx !== -1) {
             const player = await prisma.player.findUnique({
-              where: { address: parsed.data.toLowerCase() },
+              where: { id: parsed.data },
               select: {
                 address: true,
                 username: true,
@@ -113,6 +113,7 @@ export async function GET(req: NextRequest) {
         include: {
           player: {
             select: {
+              id: true,
               address: true,
               username: true,
               rank: true,
@@ -126,31 +127,31 @@ export async function GET(req: NextRequest) {
 
       const results = leaderboard.map((entry, idx) => ({
         position: offset + idx + 1,
-        address: entry.player.address,
+        playerId: entry.player.id,
         username: entry.player.username,
         xp: entry.xp,
         rank: entry.player.rank,
       }));
 
-      // Get player's rank if address provided
+      // Get player's rank if playerId provided
       let playerRank = null;
-      if (address) {
-        const parsed = addressSchema.safeParse(address);
+      if (playerId) {
+        const parsed = playerIdSchema.safeParse(playerId);
         if (parsed.success) {
           const allEntries = await prisma.seasonXp.findMany({
             where: { seasonId: activeSeason.id },
-            select: { playerAddress: true, xp: true, id: true },
+            select: { playerId: true, xp: true, id: true },
             orderBy: [{ xp: "desc" }, { id: "asc" }],
           });
 
           const playerIdx = allEntries.findIndex(
-            (e) => e.playerAddress.toLowerCase() === parsed.data.toLowerCase()
+            (e) => e.playerId === parsed.data
           );
           if (playerIdx !== -1) {
             const entry = await prisma.seasonXp.findUnique({
               where: {
-                playerAddress_seasonId: {
-                  playerAddress: parsed.data.toLowerCase(),
+                playerId_seasonId: {
+                  playerId: parsed.data,
                   seasonId: activeSeason.id,
                 },
               },
@@ -167,7 +168,7 @@ export async function GET(req: NextRequest) {
             if (entry) {
               playerRank = {
                 position: playerIdx + 1,
-                address: entry.playerAddress,
+                playerId: entry.playerId,
                 username: entry.player.username,
                 xp: entry.xp,
                 rank: entry.player.rank,

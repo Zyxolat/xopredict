@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { useSession } from "next-auth/react";
 
 interface CosmeticItem {
   type: string;
@@ -12,25 +12,25 @@ interface CosmeticItem {
 
 interface CosmeticOwned {
   id: string;
-  playerAddress: string;
+  playerId: string;
   type: string;
   name: string;
   purchasedAt: string;
 }
 
 export function CosmeticsShop() {
-  const { address } = useAccount();
+  const { data: session } = useSession();
   const [shop, setShop] = useState<CosmeticItem[]>([]);
   const [owned, setOwned] = useState<CosmeticOwned[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!address) return;
+    if (!session?.user?.playerId) return;
 
     const fetchShop = async () => {
       try {
-        const res = await fetch(`/api/cosmetics?address=${address}`);
+        const res = await fetch(`/api/cosmetics?playerId=${session.user!.playerId}`);
         const data = await res.json();
         setShop(data.data.shop);
         setOwned(data.data.owned);
@@ -42,10 +42,10 @@ export function CosmeticsShop() {
     };
 
     fetchShop();
-  }, [address]);
+  }, [session?.user]);
 
   const handlePurchase = async (item: CosmeticItem) => {
-    if (!address) return;
+    if (!session?.user?.playerId) return;
 
     setPurchasing(`${item.type}_${item.name}`);
     try {
@@ -53,7 +53,7 @@ export function CosmeticsShop() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          address,
+          playerId: session.user!.playerId,
           type: item.type,
           name: item.name,
         }),
