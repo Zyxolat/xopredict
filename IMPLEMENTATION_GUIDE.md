@@ -241,8 +241,15 @@ npm install
 # Compile
 npx hardhat compile
 
-# Deploy to Alfajores
-npx hardhat run scripts/deploy.ts --network celo-alfajores
+# Run the full randomness lifecycle locally with MockWitnetRandomness
+TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat test test/Xolat.test.ts test/Xolat.witnet.spec.ts
+
+# Live deployments are currently Celo Mainnet-only because Witnet has no
+# supported Celo Sepolia randomness deployment.
+DRY_RUN=true TS_NODE_PROJECT=tsconfig.hardhat.json npx hardhat run scripts/deploy.ts
+# Set NEXT_PUBLIC_USDM_TOKEN_ADDRESS, WITNET_RANDOMNESS_ADDRESS,
+# CELO_MAINNET_RPC_URL, and PRIVATE_KEY before a real deployment.
+npx hardhat run scripts/deploy.ts --network celo-mainnet
 
 # Set NEXT_PUBLIC_XOLAT_CONTRACT_ADDRESS in .env.local
 ```
@@ -433,9 +440,9 @@ vercel --env-file=.env.local
 - Use `SUPABASE_SERVICE_ROLE_KEY` for server-side auth
 
 ### Smart Contract
-- Deploy to Celo Alfajores testnet first
-- Update `NEXT_PUBLIC_XOLAT_CONTRACT_ADDRESS`
-- Test all functions before mainnet
+- Run contract lifecycle tests locally with Hardhat and `MockWitnetRandomness`
+- Deploy live only to Celo Mainnet using the verified Witnet randomness address
+- Update `NEXT_PUBLIC_XOLAT_CONTRACT_ADDRESS` after deployment
 
 ---
 
@@ -444,5 +451,5 @@ vercel --env-file=.env.local
 For issues, check:
 1. Database migrations (`npx prisma db push`)
 2. Environment variables (`echo $DATABASE_URL`)
-3. Smart contract events (check Alfajores Etherscan)
+3. Smart contract events (check Celo Mainnet Blockscout or Celoscan)
 4. API response codes (404 vs 400 vs 500)

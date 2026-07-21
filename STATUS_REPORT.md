@@ -3,6 +3,16 @@
 **Generated:** 2026-07-16  
 **Scope:** Full codebase review against specification checklist
 
+> **Historical audit, superseded for smart-contract and deployment status.** The
+> findings below describe the repository at the report date. As of 2026-07-20,
+> Xolat uses Witnet randomness on Celo Mainnet, deterministic settlement with
+> join-order tie-breaking, 2-4 player arenas, timeout and emergency refunds, and
+> a `MockWitnetRandomness` lifecycle suite. The current contract suites report
+> 51 passing tests; `scripts/deploy.ts` has a Mainnet-only, two-argument Witnet
+> deployment path with USDm/Witnet bytecode checks and a validated offline dry run.
+> Local Hardhat is the full lifecycle test environment because Witnet does not
+> currently publish a Celo Sepolia randomness deployment.
+
 ---
 
 ## 📊 EXECUTIVE SUMMARY

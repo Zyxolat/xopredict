@@ -10,8 +10,6 @@ const path = require("path");
 // ─── Constants (must match deploy.ts) ────────────────────────────────────────
 
 const CELO_MAINNET_CHAINID       = 42220;
-const CHAINLINK_VRF_COORDINATOR  = "0xd89b25491e4eb9b61ef1427d44541872d8160b1a";
-const CHAINLINK_KEY_HASH         = "0x60cd629669c2cc0fa6eac7e5fab989f51991b01d6d56986d110ac9fa59e33406";
 
 // Demo safety caps (1 USDm = 1e18 units)
 const DEMO_MAX_BET_PER_TX_UNITS  = BigInt("1000000000000000000");  // 1.0 USDm
@@ -91,13 +89,12 @@ function main() {
   console.log("═══════════════════════════════════════════════════════════════\n");
 
   // ── Config
-  const dryRun = true;
   const usdmAddress = process.env.NEXT_PUBLIC_USDM_TOKEN_ADDRESS || "";
-  const vrfSubIdStr = process.env.CHAINLINK_SUB_ID || "";
-  const isDryRunPlaceholder = !usdmAddress || !vrfSubIdStr;
+  const witnetAddress = process.env.WITNET_RANDOMNESS_ADDRESS || "";
+  const isDryRunPlaceholder = !usdmAddress || !witnetAddress;
 
-  const addr  = isDryRunPlaceholder ? "<NOT SET — provide env var>" : usdmAddress;
-  const subId = isDryRunPlaceholder ? "<NOT SET — provide env var>" : vrfSubIdStr;
+  const configuredUsdmAddress = isDryRunPlaceholder ? "<NOT SET — provide env var>" : usdmAddress;
+  const configuredWitnetAddress = isDryRunPlaceholder ? "<NOT SET — provide env var>" : witnetAddress;
 
   console.log("🎯 TARGET NETWORK: Celo Mainnet");
   console.log("   Mode:         DRY RUN ✓ (no broadcast)\n");
@@ -110,10 +107,8 @@ function main() {
   console.log("│  DEPLOYMENT CONFIGURATION                                   │");
   console.log("├─────────────────────────────────────────────────────────────┤");
   console.log(`│  Target network  : Celo Mainnet (chainId ${CELO_MAINNET_CHAINID})              │`);
-  console.log(`│  VRF Coordinator : ${CHAINLINK_VRF_COORDINATOR}  │`);
-  console.log(`│  Key Hash        : ${CHAINLINK_KEY_HASH.slice(0, 24)}...  │`);
-  console.log(`│  USDM address    : ${addr}`);
-  console.log(`│  VRF Sub ID      : ${subId}`);
+  console.log(`│  USDM address    : ${configuredUsdmAddress}`);
+  console.log(`│  Witnet address  : ${configuredWitnetAddress}`);
   console.log("└─────────────────────────────────────────────────────────────┘\n");
 
   // ── Demo caps
@@ -138,40 +133,37 @@ function main() {
   // ── Offline validation
   console.log("🔍 OFFLINE VALIDATION:");
   if (isDryRunPlaceholder) {
-    console.log("   ⚠️  USDM / VRF env vars not set — using placeholders for this dry run");
-    console.log("   ⚠️  Set NEXT_PUBLIC_USDM_TOKEN_ADDRESS and CHAINLINK_SUB_ID before real deployment");
+    console.log("   ⚠️  USDM / Witnet env vars not set — using placeholders for this dry run");
+    console.log("   ⚠️  Set NEXT_PUBLIC_USDM_TOKEN_ADDRESS and WITNET_RANDOMNESS_ADDRESS before real deployment");
   } else {
     if (!isAddress(usdmAddress)) {
       throw new Error(`NEXT_PUBLIC_USDM_TOKEN_ADDRESS is not a valid address: "${usdmAddress}"`);
     }
+    if (!isAddress(witnetAddress)) {
+      throw new Error(`WITNET_RANDOMNESS_ADDRESS is not a valid address: "${witnetAddress}"`);
+    }
     console.log(`   ✅ USDM address format valid (${usdmAddress})`);
-    console.log(`   ✅ VRF subscription ID valid`);
+    console.log(`   ✅ Witnet address format valid (${witnetAddress})`);
   }
-  if (!isAddress(CHAINLINK_VRF_COORDINATOR)) {
-    throw new Error(`VRF coordinator constant is not a valid address: "${CHAINLINK_VRF_COORDINATOR}"`);
-  }
-  console.log(`   ✅ VRF coordinator address format valid`);
   console.log(`   ✅ Demo caps within absolute guard ($2/tx, $10/day)\n`);
 
   // ── What would happen in a real deployment
   console.log("📋 DEPLOYMENT SEQUENCE (real run — for reference):");
   console.log("   1. Validate chainId === 42220 (Celo Mainnet)");
   console.log("   2. Estimate live gas from provider.getFeeData()");
-  console.log("   3. Confirm USDM contract code exists on-chain");
+  console.log("   3. Confirm USDM and Witnet contract code exist on-chain");
   console.log("   4. Deploy Xolat.sol with constructor args below");
   console.log("   5. Call setMaxBet(1 USDm, 5 USDm) — apply demo caps");
   console.log("   6. Auto-verify on Celoscan via hardhat-verify\n");
 
   console.log("📋 CONSTRUCTOR ARGUMENTS:");
-  console.log(`   usdmAddress      = "${addr}"`);
-  console.log(`   vrfCoordinator   = "${CHAINLINK_VRF_COORDINATOR}"`);
-  console.log(`   keyHash          = "${CHAINLINK_KEY_HASH}"`);
-  console.log(`   subscriptionId   = ${subId}\n`);
+  console.log(`   usdmAddress      = "${configuredUsdmAddress}"`);
+  console.log(`   witnetAddress    = "${configuredWitnetAddress}"\n`);
 
   // ── Commands
   console.log("📋 REAL DEPLOYMENT COMMAND (when you are ready to broadcast):");
-  console.log(`   NEXT_PUBLIC_USDM_TOKEN_ADDRESS=${addr} \\`);
-  console.log(`   CHAINLINK_SUB_ID=${subId} \\`);
+  console.log(`   NEXT_PUBLIC_USDM_TOKEN_ADDRESS=${configuredUsdmAddress} \\`);
+  console.log(`   WITNET_RANDOMNESS_ADDRESS=${configuredWitnetAddress} \\`);
   console.log(`   CELO_MAINNET_RPC_URL=<rpc_url> \\`);
   console.log(`   PRIVATE_KEY=<deployer_key> \\`);
   console.log(`   CELOSCAN_API_KEY=<api_key> \\`);
@@ -179,10 +171,8 @@ function main() {
 
   console.log("📋 CELOSCAN VERIFICATION (runs automatically if CELOSCAN_API_KEY is set):");
   console.log(`   node_modules/.bin/hardhat verify --network celo-mainnet <CONTRACT_ADDRESS> \\`);
-  console.log(`     "${addr}" \\`);
-  console.log(`     "${CHAINLINK_VRF_COORDINATOR}" \\`);
-  console.log(`     "${CHAINLINK_KEY_HASH}" \\`);
-  console.log(`     ${subId}\n`);
+  console.log(`     "${configuredUsdmAddress}" \\`);
+  console.log(`     "${configuredWitnetAddress}"\n`);
 
   console.log("═══════════════════════════════════════════════════════════════");
   console.log("✅ DRY RUN COMPLETE — all offline checks passed");
