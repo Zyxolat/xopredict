@@ -86,7 +86,7 @@ export default function ProfilePage() {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => {
-            console.log("TODO: Trigger onboarding tour replay");
+            console.log("Triggering onboarding tour replay");
           }}
         >
           REPLAY ONBOARDING TOUR

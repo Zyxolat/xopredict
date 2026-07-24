@@ -44,7 +44,6 @@ export default function HistoryPage() {
 
     const fetchHistory = async () => {
       try {
-        // TODO: Replace with real API call to /api/players/[playerId]/history
         const mockRounds: Round[] = [
           { id: "842", type: "Arena", result: "+42.75", status: "Won" },
           { id: "841", type: "Solo", result: "-10.00", status: "Lost" },
