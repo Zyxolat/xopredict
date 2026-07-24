@@ -50,7 +50,21 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
     uint256 public lossesBeforeCooldown = 5;
 
     uint256 public constant RANDOMNESS_TIMEOUT = 1_200;
+    uint256 public arenaTimeout = 1_800; // 30 minutes default for unfilled arenas
     mapping(uint256 roundId => RandomnessRequest) public randomnessRequests;
+
+    // ============= ENUMS =============
+
+    enum ArenaStatus {
+        OPEN,
+        FULL,
+        PICKING,
+        RANDOMNESS_REQUESTED,
+        REVEALED,
+        SETTLED,
+        REFUNDED,
+        EXPIRED
+    }
 
     // ============= STRUCTS =============
 
@@ -73,6 +87,7 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         uint256 roundId;
         uint8 pickedCount;
         address[] players;
+        ArenaStatus status;
         mapping(address => uint8) playerCards; // card index 0-3
         mapping(address => bool) hasPicked;
     }
@@ -129,6 +144,7 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         address indexed player,
         uint8 cardIndex
     );
+    event ArenaRefunded(uint256 indexed arenaId, string reason);
     event RoundCreated(
         uint256 indexed roundId,
         string roundType,
@@ -211,6 +227,7 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         arena.playerCount = 1;
         arena.createdAt = block.timestamp;
         arena.players.push(msg.sender);
+        arena.status = ArenaStatus.OPEN;
 
         emit ArenaCreated(arenaId, msg.sender, betAmount, maxPlayers);
     }
@@ -237,6 +254,9 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         _takeBet(msg.sender, arena.betAmount);
         arena.playerCount++;
         arena.players.push(msg.sender);
+        if (arena.playerCount == arena.maxPlayers) {
+            arena.status = ArenaStatus.FULL;
+        }
 
         emit PlayerJoined(arenaId, msg.sender);
     }
@@ -267,6 +287,9 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
             arena.pickedCount++;
         }
         arena.playerCards[msg.sender] = cardIndex;
+        if (arena.status == ArenaStatus.FULL || arena.status == ArenaStatus.OPEN) {
+            arena.status = ArenaStatus.PICKING;
+        }
         emit CardPicked(arenaId, msg.sender, cardIndex);
 
         if (
@@ -285,6 +308,44 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
 
             emit RoundCreated(roundId, "arena", arenaId, address(0), round.potUsdm);
         }
+    }
+
+    /**
+     * @notice Refunds an unfilled or unstarted arena if the timeout has expired.
+     * @dev Can be called by anyone once `createdAt + arenaTimeout` has passed, provided roundId == 0.
+     * @param arenaId The arena ID to refund
+     */
+    function refundUnfilledArena(uint256 arenaId)
+        external
+        whenNotPaused
+        nonReentrant
+    {
+        Arena storage arena = arenas[arenaId];
+        require(arena.arenaId != 0, "arena not found");
+        require(arena.roundId == 0, "round already created");
+        require(!arena.settled, "arena already settled");
+        require(
+            arena.status != ArenaStatus.EXPIRED && arena.status != ArenaStatus.REFUNDED,
+            "arena already refunded"
+        );
+        require(
+            block.timestamp >= arena.createdAt + arenaTimeout,
+            "timeout not reached"
+        );
+
+        arena.settled = true;
+        arena.status = ArenaStatus.EXPIRED;
+
+        for (uint256 i = 0; i < arena.players.length; i++) {
+            address player = arena.players[i];
+            require(
+                usdm.transfer(player, arena.betAmount),
+                "arena refund transfer failed"
+            );
+            emit RefundProcessed(0, player, arena.betAmount, "unfilled arena refund");
+        }
+
+        emit ArenaRefunded(arenaId, "unfilled arena timeout");
     }
 
 
@@ -367,6 +428,10 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         });
         round.status = "randomnessRequested";
 
+        if (keccak256(abi.encode(round.roundType)) == keccak256(abi.encode("arena"))) {
+            arenas[round.arenaId].status = ArenaStatus.RANDOMNESS_REQUESTED;
+        }
+
         uint256 unusedCelo = msg.value - celoPaid;
         if (unusedCelo > 0) {
             (bool refunded, ) = payable(msg.sender).call{value: unusedCelo}("");
@@ -404,6 +469,10 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         round.numbers = cardValues;
         round.commitHash = keccak256(abi.encode(randomness, cardValues));
         round.status = "revealed";
+
+        if (keccak256(abi.encode(round.roundType)) == keccak256(abi.encode("arena"))) {
+            arenas[round.arenaId].status = ArenaStatus.REVEALED;
+        }
 
         emit RandomnessRevealed(roundId, round.commitHash, randomness);
     }
@@ -482,13 +551,29 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         ) {
             Arena storage arena = arenas[round.arenaId];
             winner = arena.players[0];
-            uint256 highestValue = round.numbers[arena.playerCards[winner]];
+            uint8 winnerCard = arena.playerCards[winner];
+            uint256 highestValue = round.numbers[winnerCard];
+            uint256 highestTieBreaker = uint256(
+                keccak256(abi.encodePacked(winner, round.randomness, winnerCard))
+            );
 
             for (uint256 i = 1; i < arena.players.length; i++) {
                 address player = arena.players[i];
-                uint256 selectedValue = round.numbers[arena.playerCards[player]];
+                uint8 playerCard = arena.playerCards[player];
+                uint256 selectedValue = round.numbers[playerCard];
+                uint256 playerTieBreaker = uint256(
+                    keccak256(abi.encodePacked(player, round.randomness, playerCard))
+                );
+
                 if (selectedValue > highestValue) {
                     highestValue = selectedValue;
+                    highestTieBreaker = playerTieBreaker;
+                    winner = player;
+                } else if (
+                    selectedValue == highestValue &&
+                    playerTieBreaker > highestTieBreaker
+                ) {
+                    highestTieBreaker = playerTieBreaker;
                     winner = player;
                 }
             }
@@ -499,6 +584,7 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
             round.status = "completed";
             arena.winner = winner;
             arena.settled = true;
+            arena.status = ArenaStatus.SETTLED;
 
             require(usdm.transfer(winner, payout), "winner transfer failed");
             require(usdm.transfer(owner(), ownerFee), "owner fee transfer failed");
@@ -562,6 +648,8 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         }
 
         arena.settled = true;
+        arena.status = ArenaStatus.REFUNDED;
+        emit ArenaRefunded(round.arenaId, reason);
     }
 
     function emergencyRefundRound(uint256 roundId)
@@ -626,6 +714,11 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
         require(duration > 0 && losses > 0, "params must be positive");
         cooldownDuration = duration;
         lossesBeforeCooldown = losses;
+    }
+
+    function setArenaTimeout(uint256 duration) external onlyOwner {
+        require(duration > 0, "timeout must be positive");
+        arenaTimeout = duration;
     }
 
     // ============= INTERNAL FUNCTIONS =============
@@ -696,7 +789,8 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
             bool,
             address,
             uint256,
-            address[] memory
+            address[] memory,
+            ArenaStatus
         )
     {
         Arena storage arena = arenas[arenaId];
@@ -708,7 +802,8 @@ contract Xolat is ReentrancyGuard, Pausable, Ownable {
             arena.settled,
             arena.winner,
             arena.createdAt,
-            arena.players
+            arena.players,
+            arena.status
         );
     }
 
