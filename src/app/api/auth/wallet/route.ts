@@ -10,6 +10,8 @@ import {
 } from "@/lib/wallet-linking";
 import { prisma } from "@/lib/prisma";
 
+import { checkRateLimit, rateLimitExceededResponse } from "@/lib/rate-limit";
+
 const requestSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   message: z.string().min(16).max(500),
@@ -17,6 +19,12 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const ip = request.headers.get("x-forwarded-for") || "global-wallet-auth";
+  const rateLimit = checkRateLimit(`wallet-auth:${ip}`, { limit: 20, windowMs: 60_000 });
+  if (!rateLimit.success) {
+    return rateLimitExceededResponse(rateLimit.reset);
+  }
+
   const parsed = requestSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json(

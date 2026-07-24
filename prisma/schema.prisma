@@ -61,6 +61,8 @@ model KeeperJob {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  @@index([status, stage])
+  @@index([lockedAt])
   @@map("keeper_jobs")
 }
 
@@ -87,6 +89,8 @@ model Player {
   cosmetics          CosmeticOwned[]
   referralsMade      Referral[]      @relation("referrer")
   referralReceived   Referral?       @relation("referee")
+
+  @@index([totalWonUsdm(sort: Desc)])
   @@map("players")
 }
 
@@ -107,6 +111,9 @@ model Round {
   status        String    @default("pending")
   createdAt     DateTime  @default(now())
   picks         Pick[]
+
+  @@index([status])
+  @@index([winnerAddress])
   @@map("rounds")
 }
 
@@ -118,6 +125,9 @@ model Pick {
   value     Int?
   round     Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
   player    Player @relation(fields: [playerId], references: [id])
+
+  @@index([roundId])
+  @@index([playerId])
   @@map("picks")
 }
 
@@ -129,6 +139,8 @@ model Referral {
   createdAt    DateTime @default(now())
   referrer     Player   @relation("referrer", fields: [referrerId], references: [id])
   referee      Player   @relation("referee", fields: [refereeId], references: [id])
+
+  @@index([referrerId])
   @@map("referrals")
 }
 
@@ -190,6 +202,8 @@ model Arena {
   updatedAt      DateTime      @updatedAt
   expiresAt      DateTime?
 
+  @@index([status, isPrivate])
+  @@index([creatorAddress])
   @@map("arenas")
 }
 
