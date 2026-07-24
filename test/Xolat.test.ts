@@ -388,4 +388,103 @@ describe("Xolat.sol", function () {
       expect(a2).to.equal(a1 + 1n);
     });
   });
+
+  describe("Arena Contract Hardening (Phase 4.1)", function () {
+    let h1: any, h2: any, h3: any;
+
+    beforeEach(async function () {
+      const signers = await ethers.getSigners();
+      h1 = signers[15];
+      h2 = signers[16];
+      h3 = signers[17];
+      for (const p of [h1, h2, h3]) {
+        await usdm.mint(p.address, BALANCE);
+        await usdm.connect(p).approve(await xolat.getAddress(), ethers.MaxUint256);
+      }
+    });
+
+    it("Owner can set arena timeout", async function () {
+      await xolat.connect(owner).setArenaTimeout(600);
+      expect(await xolat.arenaTimeout()).to.equal(600n);
+      await xolat.connect(owner).setArenaTimeout(1800); // restore default
+    });
+
+    it("Non-owner cannot set arena timeout", async function () {
+      await expect(xolat.connect(h1).setArenaTimeout(600))
+        .to.be.revertedWithCustomError(xolat, "OwnableUnauthorizedAccount");
+    });
+
+    it("Tracks status transitions: OPEN -> FULL -> PICKING", async function () {
+      await xolat.connect(h1).createArena(BET, 2);
+      const id = await xolat.arenaCount();
+      let arena = await xolat.getArena(id);
+      expect(arena[8]).to.equal(0n); // ArenaStatus.OPEN = 0
+
+      await xolat.connect(h2).joinArena(id);
+      arena = await xolat.getArena(id);
+      expect(arena[8]).to.equal(1n); // ArenaStatus.FULL = 1
+
+      await xolat.connect(h1).pickCard(id, 0);
+      arena = await xolat.getArena(id);
+      expect(arena[8]).to.equal(2n); // ArenaStatus.PICKING = 2
+    });
+
+    it("Refunds single-player unfilled arena after timeout expires", async function () {
+      const balanceBefore = await usdm.balanceOf(h1.address);
+      await xolat.connect(h1).createArena(BET, 4);
+      const id = await xolat.arenaCount();
+
+      // Before timeout - should revert
+      await expect(xolat.connect(h2).refundUnfilledArena(id)).to.be.revertedWith("timeout not reached");
+
+      // Advance time past 1800s timeout
+      await time.increase(1801);
+
+      // Anyone (h3) can trigger refund
+      const tx = await xolat.connect(h3).refundUnfilledArena(id);
+      await expect(tx).to.emit(xolat, "ArenaRefunded").withArgs(id, "unfilled arena timeout");
+
+      expect(await usdm.balanceOf(h1.address)).to.equal(balanceBefore);
+      const arena = await xolat.getArena(id);
+      expect(arena[4]).to.be.true; // settled
+      expect(arena[8]).to.equal(7n); // ArenaStatus.EXPIRED = 7
+    });
+
+    it("Partial arena refund: refunds all joined players (2 of 4) when timeout expires", async function () {
+      const h1Before = await usdm.balanceOf(h1.address);
+      const h2Before = await usdm.balanceOf(h2.address);
+
+      await xolat.connect(h1).createArena(BET, 4);
+      const id = await xolat.arenaCount();
+      await xolat.connect(h2).joinArena(id);
+
+      await time.increase(1801);
+
+      await xolat.connect(h3).refundUnfilledArena(id);
+
+      expect(await usdm.balanceOf(h1.address)).to.equal(h1Before);
+      expect(await usdm.balanceOf(h2.address)).to.equal(h2Before);
+    });
+
+    it("Rejects double refund on unfilled arena", async function () {
+      await xolat.connect(h1).createArena(BET, 3);
+      const id = await xolat.arenaCount();
+      await time.increase(1801);
+
+      await xolat.connect(h2).refundUnfilledArena(id);
+      await expect(xolat.connect(h3).refundUnfilledArena(id)).to.be.revertedWith("arena already settled");
+    });
+
+    it("Rejects unfilled refund if round was already created", async function () {
+      await xolat.connect(h1).createArena(BET, 2);
+      const id = await xolat.arenaCount();
+      await xolat.connect(h2).joinArena(id);
+
+      await xolat.connect(h1).pickCard(id, 0);
+      await xolat.connect(h2).pickCard(id, 1);
+
+      await time.increase(1801);
+      await expect(xolat.connect(h3).refundUnfilledArena(id)).to.be.revertedWith("round already created");
+    });
+  });
 });

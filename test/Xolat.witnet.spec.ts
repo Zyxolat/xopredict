@@ -167,7 +167,7 @@ describe("Xolat Witnet specification", function () {
       );
     });
 
-    it("awards an equal-value tie to the earliest player in join order", async function () {
+    it("breaks an equal-value tie deterministically using player hash tie-breaker", async function () {
       await xolat.connect(playerOne).createArena(BET, 2);
       const arenaId = await xolat.arenaCount();
       await xolat.connect(playerTwo).joinArena(arenaId);
@@ -199,12 +199,18 @@ describe("Xolat Witnet specification", function () {
       await witnet.setRandomValue(request.requestBlock, secondCardNonce, 42);
       await xolat.fetchRandomness(roundId);
 
-      const creatorBalanceBefore = await usdm.balanceOf(playerOne.address);
+      // Compute expected deterministic winner on-chain
+      const randomness = await xolat.getRandomness(roundId);
+      const hash1 = BigInt(ethers.solidityPackedKeccak256(["address", "bytes32", "uint8"], [playerOne.address, randomness, 0]));
+      const hash2 = BigInt(ethers.solidityPackedKeccak256(["address", "bytes32", "uint8"], [playerTwo.address, randomness, 1]));
+      const expectedWinner = hash2 > hash1 ? playerTwo : playerOne;
+      const expectedWinnerBalanceBefore = await usdm.balanceOf(expectedWinner.address);
+
       await xolat.connect(keeper).settleRound(roundId);
 
-      expect((await xolat.getRound(roundId)).winnerAddress).to.equal(playerOne.address);
-      expect(await usdm.balanceOf(playerOne.address)).to.equal(
-        creatorBalanceBefore + (BET * 2n * 95n) / 100n
+      expect((await xolat.getRound(roundId)).winnerAddress).to.equal(expectedWinner.address);
+      expect(await usdm.balanceOf(expectedWinner.address)).to.equal(
+        expectedWinnerBalanceBefore + (BET * 2n * 95n) / 100n
       );
     });
   });
