@@ -157,6 +157,36 @@ model CosmeticOwned {
   @@map("cosmetics_owned")
 }
 
+enum DbArenaStatus {
+  OPEN
+  FULL
+  PICKING
+  RANDOMNESS_REQUESTED
+  REVEALED
+  SETTLED
+  REFUNDED
+  EXPIRED
+}
+
+model Arena {
+  id             String        @id @default(uuid())
+  arenaId        BigInt        @unique
+  creatorAddress String
+  inviteCode     String?       @unique
+  isPrivate      Boolean       @default(false)
+  betAmount      Decimal       @db.Decimal(36, 18)
+  maxPlayers     Int
+  currentPlayers Int           @default(1)
+  status         DbArenaStatus @default(OPEN)
+  players        String[]      // array of player wallet addresses (lowercased)
+  roundId        BigInt?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  expiresAt      DateTime?
+
+  @@map("arenas")
+}
+
 model PrivateArena {
   id             String   @id @default(uuid())
   creatorId      String
