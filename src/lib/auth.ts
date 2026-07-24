@@ -19,7 +19,7 @@ declare module "next-auth" {
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  secret: process.env.NEXTAUTH_SECRET || "dev-secret-key",
+  secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
@@ -55,14 +55,30 @@ export const authOptions: NextAuthOptions = {
             let player = existingByEmail;
 
             if (!player) {
-              // New Google signup - create Player with email as placeholder
-              player = await prisma.player.create({
-                data: {
-                  address: null, // Google-first users start with null address
-                  email: user.email,
-                  userId: user.id,
-                },
+              // No Player found by email — check if this User already has one
+              // (e.g. from a prior merge or repeated sign-in)
+              const existingByUserId = await prisma.player.findUnique({
+                where: { userId: user.id },
               });
+
+              if (existingByUserId) {
+                // Reuse the existing Player; update email if not yet set
+                player = existingByUserId.email
+                  ? existingByUserId
+                  : await prisma.player.update({
+                      where: { id: existingByUserId.id },
+                      data: { email: user.email },
+                    });
+              } else {
+                // Genuinely new Google/Email signup — create Player
+                player = await prisma.player.create({
+                  data: {
+                    address: null, // Google-first users start with null address
+                    email: user.email,
+                    userId: user.id,
+                  },
+                });
+              }
             } else if (!player.userId) {
               // Wallet-first user adding Google email
               player = await prisma.player.update({
