@@ -18,6 +18,46 @@ enum CosmeticType {
   frame
 }
 
+enum KeeperStage {
+  REQUEST_RANDOMNESS
+  AWAIT_WITNET
+  FETCH_RANDOMNESS
+  SETTLE_ROUND
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum KeeperJobStatus {
+  PENDING
+  PROCESSING
+  FAILED
+  COMPLETED
+}
+
+model KeeperJob {
+  id            String          @id @default(uuid())
+  roundId       BigInt          @unique
+  playerAddress String
+  betAmount     Decimal         @db.Decimal(36, 18)
+  cardIndex     Int
+  stage         KeeperStage     @default(REQUEST_RANDOMNESS)
+  status        KeeperJobStatus @default(PENDING)
+  requestBlock  BigInt?
+  celoPaid      Decimal?        @db.Decimal(36, 18)
+  requestTxHash String?
+  fetchTxHash   String?
+  settleTxHash  String?
+  retryCount    Int             @default(0)
+  lastError     String?
+  nextRetryAt   DateTime?
+  lockedAt      DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("keeper_jobs")
+}
+
 model Player {
   id                 String          @id @default(uuid())
   userId             String?         @unique
@@ -41,7 +81,6 @@ model Player {
   cosmetics          CosmeticOwned[]
   referralsMade      Referral[]      @relation("referrer")
   referralReceived   Referral?       @relation("referee")
-  arenasCreated      PrivateArena[]
   @@map("players")
 }
 
@@ -77,13 +116,13 @@ model Pick {
 }
 
 model Referral {
-  id         String   @id @default(uuid())
-  referrerId String
-  refereeId  String   @unique
-  bonusClaimed Boolean @default(false)
-  createdAt  DateTime @default(now())
-  referrer   Player   @relation("referrer", fields: [referrerId], references: [id])
-  referee    Player   @relation("referee", fields: [refereeId], references: [id])
+  id           String   @id @default(uuid())
+  referrerId   String
+  refereeId    String   @unique
+  bonusClaimed Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  referrer     Player   @relation("referrer", fields: [referrerId], references: [id])
+  referee      Player   @relation("referee", fields: [refereeId], references: [id])
   @@map("referrals")
 }
 
@@ -119,17 +158,16 @@ model CosmeticOwned {
 }
 
 model PrivateArena {
-  id          String   @id @default(uuid())
-  creatorId   String
-  inviteCode  String   @unique
-  betAmount   Decimal  @db.Decimal(36, 18)
-  maxPlayers  Int
-  currentPlayers Int   @default(1)
-  status      String   @default("active") // active, full, completed
-  playerIds   String[] // array of player IDs (UUIDs)
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime // 30 min timeout
-  creator     Player   @relation(fields: [creatorId], references: [id])
+  id             String   @id @default(uuid())
+  creatorId      String
+  inviteCode     String   @unique
+  betAmount      Decimal  @db.Decimal(36, 18)
+  maxPlayers     Int
+  currentPlayers Int      @default(1)
+  status         String   @default("active") // active, full, completed
+  playerIds      String[] // array of player UUIDs
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime // 30 min timeout
   @@map("private_arenas")
 }
 
@@ -140,6 +178,7 @@ model User {
   email         String?   @unique
   emailVerified DateTime?
   image         String?
+  isAdmin       Boolean   @default(false)
   accounts      Account[]
   sessions      Session[]
   player        Player?
