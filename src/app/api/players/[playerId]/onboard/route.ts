@@ -3,13 +3,23 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { playerIdSchema } from "@/lib/validation";
+import { requireSelf } from "@/lib/api-auth";
 
 export async function POST(
   request: Request,
   { params }: { params: { playerId: string } }
 ) {
   try {
-    const playerId = params.playerId;
+    const parsed = playerIdSchema.safeParse(params.playerId);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
+    }
+
+    const auth = await requireSelf(parsed.data);
+    if (!auth.ok) return auth.response;
+
+    const playerId = parsed.data;
 
     // Update player onboarded flag
     const player = await prisma.player.update({

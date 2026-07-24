@@ -1,16 +1,28 @@
 /**
- * GET /api/private-arenas - List user's private arenas or get arena by code
+ * GET /api/private-arenas - List user's private arenas
  * POST /api/private-arenas - Create private arena with invite code
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { playerIdSchema } from "@/lib/validation";
 import crypto from "crypto";
+import { requireSession, requireSelf, assertSelf } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
-// Arena expires 30 minutes after creation if not fully joined
-const ARENA_TIMEOUT_MS = 30 * 60 * 1000;
+interface PrivateArena {
+  id: string;
+  creatorId: string;
+  inviteCode: string;
+  betAmount: number;
+  maxPlayers: number;
+  currentPlayers: number;
+  status: "active" | "full" | "completed";
+  createdAt: Date;
+}
+
+// For production, store in database
+const privateArenas = new Map<string, PrivateArena>();
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,10 +30,13 @@ export async function GET(req: NextRequest) {
     const code = req.nextUrl.searchParams.get("code");
 
     if (code) {
-      // Get arena by invite code
-      const arena = await prisma.privateArena.findUnique({
-        where: { inviteCode: code },
-      });
+      // Joining by invite code: any authenticated player may use a code.
+      const auth = await requireSession();
+      if (!auth.ok) return auth.response;
+
+      const arena = Array.from(privateArenas.values()).find(
+        (a) => a.inviteCode === code
+      );
 
       if (!arena) {
         return NextResponse.json(
@@ -30,38 +45,14 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Check if arena has expired
-      if (new Date() > arena.expiresAt) {
-        await prisma.privateArena.delete({
-          where: { id: arena.id },
-        });
-        return NextResponse.json(
-          { error: "Arena invite has expired" },
-          { status: 410 }
-        );
-      }
-
       if (arena.status === "full") {
         return NextResponse.json(
-          { error: "Arena is full", data: { arena } },
+          { error: "Arena is full" },
           { status: 409 }
         );
       }
 
-      return NextResponse.json({
-        data: {
-          arena: {
-            id: arena.id,
-            creatorId: arena.creatorId,
-            inviteCode: arena.inviteCode,
-            betAmount: arena.betAmount.toString(),
-            maxPlayers: arena.maxPlayers,
-            currentPlayers: arena.currentPlayers,
-            status: arena.status,
-            playerCount: arena.playerIds.length,
-          },
-        },
-      });
+      return NextResponse.json({ data: { arena } });
     }
 
     if (!playerId) {
@@ -73,61 +64,37 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
+    const auth = await requireSelf(parsed.data);
+    if (!auth.ok) return auth.response;
+
     const pId = parsed.data;
-
-    // Get user's active arenas
-    const userArenas = await prisma.privateArena.findMany({
-      where: {
-        creatorId: pId,
-        status: { in: ["active", "full"] },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    // Filter out expired arenas and delete them
-    const now = new Date();
-    for (const arena of userArenas) {
-      if (now > arena.expiresAt) {
-        await prisma.privateArena.delete({
-          where: { id: arena.id },
-        });
-      }
-    }
-
-    const activeArenas = userArenas
-      .filter((a: typeof userArenas[number]) => now <= a.expiresAt)
-      .map((arena: typeof userArenas[number]) => ({
-        id: arena.id,
-        creatorId: arena.creatorId,
-        inviteCode: arena.inviteCode,
-        betAmount: arena.betAmount.toString(),
-        maxPlayers: arena.maxPlayers,
-        currentPlayers: arena.currentPlayers,
-        status: arena.status,
-        playerCount: arena.playerIds.length,
-        createdAt: arena.createdAt,
-      }));
+    const userArenas = Array.from(privateArenas.values()).filter(
+      (a) => a.creatorId === pId
+    );
 
     return NextResponse.json({
-      data: { arenas: activeArenas },
+      data: { arenas: userArenas },
     });
   } catch (error) {
-    console.error("GET /api/private-arenas error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.error(error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+
     const { playerId, betAmount, maxPlayers } = await req.json();
 
     const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
+
+    const fail = assertSelf(auth, parsed.data);
+    if (fail) return fail.response;
 
     const pId = parsed.data;
     const player = await prisma.player.findUnique({
@@ -147,56 +114,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid player count" }, { status: 400 });
     }
 
-    // Generate unique invite code
-    let inviteCode = "";
-    let isUnique = false;
-    while (!isUnique) {
-      inviteCode = crypto.randomBytes(6).toString("hex").toUpperCase();
-      const existing = await prisma.privateArena.findUnique({
-        where: { inviteCode },
-      });
-      isUnique = !existing;
-    }
+    // Generate invite code
+    const inviteCode = crypto.randomBytes(6).toString("hex").toUpperCase();
 
-    // Create arena in database
-    const expiresAt = new Date(Date.now() + ARENA_TIMEOUT_MS);
-    const arena = await prisma.privateArena.create({
-      data: {
-        creatorId: pId,
-        inviteCode,
-        betAmount: betAmount.toString(),
-        maxPlayers,
-        currentPlayers: 1,
-        status: "active",
-        playerIds: [pId], // Array of player addresses
-        expiresAt,
-      },
-    });
+    const arena: PrivateArena = {
+      id: crypto.randomUUID(),
+      creatorId: pId,
+      inviteCode,
+      betAmount,
+      maxPlayers,
+      currentPlayers: 1,
+      status: "active",
+      createdAt: new Date(),
+    };
+
+    privateArenas.set(arena.id, arena);
 
     return NextResponse.json(
       {
         data: {
-          arena: {
-            id: arena.id,
-            creatorId: arena.creatorId,
-            inviteCode: arena.inviteCode,
-            betAmount: arena.betAmount.toString(),
-            maxPlayers: arena.maxPlayers,
-            currentPlayers: arena.currentPlayers,
-            status: arena.status,
-            playerCount: arena.playerIds.length,
-            expiresAt: arena.expiresAt,
-          },
-          joinUrl: `${process.env.NEXT_PUBLIC_APP_URL || "https://xolat.game"}/arena?code=${inviteCode}`,
+          arena,
+          joinUrl: `https://xolat.game/arena?code=${inviteCode}`,
         },
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("POST /api/private-arenas error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    console.error(error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

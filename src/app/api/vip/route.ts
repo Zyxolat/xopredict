@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { playerIdSchema } from "@/lib/validation";
 import { Decimal } from "@prisma/client/runtime/library";
+import { requireSelf, assertSelf, requireSession } from "@/lib/api-auth";
 
 const VIP_PASS_PRICE = 10; // 10 USDm/month
 const VIP_DURATION_DAYS = 30;
@@ -40,6 +41,9 @@ export async function GET(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
+
+    const auth = await requireSelf(parsed.data);
+    if (!auth.ok) return auth.response;
 
     const pId = parsed.data;
     const player = await prisma.player.findUnique({
@@ -81,12 +85,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+
     const { playerId } = await req.json();
 
     const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
+
+    const fail = assertSelf(auth, parsed.data);
+    if (fail) return fail.response;
 
     const pId = parsed.data;
     const player = await prisma.player.findUnique({

@@ -9,16 +9,23 @@ import {
   calculateFreePlayAmount,
 } from "@/lib/gamification";
 import { playerIdSchema } from "@/lib/validation";
+import { requireSelf, assertSelf, requireSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+
     const { playerId } = await req.json();
     const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid Player ID" }, { status: 400 });
     }
+
+    const fail = assertSelf(auth, parsed.data);
+    if (fail) return fail.response;
 
     const player = await prisma.player.findUnique({
       where: { id: parsed.data },
@@ -91,6 +98,9 @@ export async function GET(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid Player ID" }, { status: 400 });
     }
+
+    const auth = await requireSelf(parsed.data);
+    if (!auth.ok) return auth.response;
 
     const player = await prisma.player.findUnique({
       where: { id: parsed.data },

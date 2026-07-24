@@ -7,21 +7,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { playerIdSchema } from "@/lib/validation";
+import { requireAdmin } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
-// Simple admin key verification (in production, use JWT)
-function isAdmin(req: NextRequest): boolean {
-  const authHeader = req.headers.get("authorization");
-  const adminKey = process.env.ADMIN_KEY || "admin-secret-key";
-  return authHeader === `Bearer ${adminKey}`;
-}
-
 export async function POST(req: NextRequest) {
   try {
-    if (!isAdmin(req)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireAdmin();
+    if (!auth.ok) return auth.response;
 
     const { action, playerId } = await req.json();
 

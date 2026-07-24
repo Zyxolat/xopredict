@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { playerIdSchema } from "@/lib/validation";
 import { getCosmeticPrice, validateCosmeticPurchase } from "@/lib/gamification";
+import { requireSelf, assertSelf, requireSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -22,22 +23,25 @@ export async function GET(req: NextRequest) {
   try {
     const playerId = req.nextUrl.searchParams.get("playerId");
 
-    // Get shop
+    // Shop listing is public; owned list is scoped to the requesting player.
+    let owned: Array<{ id: string; playerId: string; type: string; name: string; purchasedAt: Date }> = [];
+    if (playerId) {
+      const parsed = playerIdSchema.safeParse(playerId);
+      if (!parsed.success) {
+        return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
+      }
+      const auth = await requireSelf(parsed.data);
+      if (!auth.ok) return auth.response;
+
+      owned = await prisma.cosmeticOwned.findMany({
+        where: { playerId: parsed.data },
+      });
+    }
+
     const shop = SHOP_ITEMS.map((item) => ({
       ...item,
       price: getCosmeticPrice(item.type, item.name),
     }));
-
-    // If address provided, get owned cosmetics
-    let owned: Array<{ id: string; playerId: string; type: string; name: string; purchasedAt: Date }> = [];
-    if (playerId) {
-      const parsed = playerIdSchema.safeParse(playerId);
-      if (parsed.success) {
-        owned = await prisma.cosmeticOwned.findMany({
-          where: { playerId: parsed.data },
-        });
-      }
-    }
 
     return NextResponse.json({
       data: { shop, owned },
@@ -50,12 +54,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+
     const { playerId, type, name } = await req.json();
 
     const parsed = playerIdSchema.safeParse(playerId);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
+
+    const fail = assertSelf(auth, parsed.data);
+    if (fail) return fail.response;
 
     const pId = parsed.data;
 

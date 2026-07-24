@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 const createArenaSchema = z.object({ roundId: z.coerce.bigint().positive(), betAmount: z.string().regex(/^\d+(\.\d{1,18})?$/), maxPlayers: z.number().int().min(2).max(6), transactionHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/), commitment: z.string().min(10) });
 
 export async function POST(request: Request) {
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+
   const parsed = createArenaSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
   const input = parsed.data;

@@ -5,11 +5,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { playerIdSchema } from "@/lib/validation";
+import { requireSelf, assertSelf, requireSession } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+
     const { playerId, referrerId } = await req.json();
 
     // Validate IDs
@@ -24,6 +28,10 @@ export async function POST(req: NextRequest) {
 
     const player = playerParsed.data;
     const referrer = referrerParsed.data;
+
+    // Only the authenticated player may register their own referral.
+    const fail = assertSelf(auth, player!);
+    if (fail) return fail.response;
 
     // Check if player already has a referrer
     const existingReferral = await prisma.referral.findUnique({
@@ -86,6 +94,9 @@ export async function GET(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
+
+    const auth = await requireSelf(parsed.data);
+    if (!auth.ok) return auth.response;
 
     const pId = parsed.data;
 
