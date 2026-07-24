@@ -1,6 +1,6 @@
 /**
- * GET /api/private-arenas - List user's private arenas
- * POST /api/private-arenas - Create private arena with invite code
+ * GET /api/private-arenas - List user's private arenas or search by invite code
+ * POST /api/private-arenas - Create private arena with invite code (Persisted in Prisma DB)
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -9,20 +9,6 @@ import crypto from "crypto";
 import { requireSession, requireSelf, assertSelf } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
-
-interface PrivateArena {
-  id: string;
-  creatorId: string;
-  inviteCode: string;
-  betAmount: number;
-  maxPlayers: number;
-  currentPlayers: number;
-  status: "active" | "full" | "completed";
-  createdAt: Date;
-}
-
-// For production, store in database
-const privateArenas = new Map<string, PrivateArena>();
 
 export async function GET(req: NextRequest) {
   try {
@@ -34,9 +20,9 @@ export async function GET(req: NextRequest) {
       const auth = await requireSession();
       if (!auth.ok) return auth.response;
 
-      const arena = Array.from(privateArenas.values()).find(
-        (a) => a.inviteCode === code
-      );
+      const arena = await prisma.privateArena.findUnique({
+        where: { inviteCode: code },
+      });
 
       if (!arena) {
         return NextResponse.json(
@@ -68,15 +54,16 @@ export async function GET(req: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const pId = parsed.data;
-    const userArenas = Array.from(privateArenas.values()).filter(
-      (a) => a.creatorId === pId
-    );
+    const userArenas = await prisma.privateArena.findMany({
+      where: { creatorId: pId },
+      orderBy: { createdAt: "desc" },
+    });
 
     return NextResponse.json({
       data: { arenas: userArenas },
     });
   } catch (error) {
-    console.error(error);
+    console.error("[API GET /api/private-arenas] Error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -116,19 +103,20 @@ export async function POST(req: NextRequest) {
 
     // Generate invite code
     const inviteCode = crypto.randomBytes(6).toString("hex").toUpperCase();
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
 
-    const arena: PrivateArena = {
-      id: crypto.randomUUID(),
-      creatorId: pId,
-      inviteCode,
-      betAmount,
-      maxPlayers,
-      currentPlayers: 1,
-      status: "active",
-      createdAt: new Date(),
-    };
-
-    privateArenas.set(arena.id, arena);
+    const arena = await prisma.privateArena.create({
+      data: {
+        creatorId: pId,
+        inviteCode,
+        betAmount,
+        maxPlayers,
+        currentPlayers: 1,
+        status: "active",
+        playerIds: [pId],
+        expiresAt,
+      },
+    });
 
     return NextResponse.json(
       {
@@ -140,7 +128,7 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error(error);
+    console.error("[API POST /api/private-arenas] Error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
