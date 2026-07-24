@@ -7,7 +7,7 @@ import { formatUnits } from "viem";
 export function useUsdmBalance() {
   const { address } = useAccount();
 
-  const { data, isLoading, error } = useReadContract({
+  const { data, isLoading, error, refetch } = useReadContract({
     address: usdmAddress,
     abi: usdmAbi,
     functionName: "balanceOf",
@@ -25,6 +25,7 @@ export function useUsdmBalance() {
     balanceBigInt: data as bigint | undefined,
     isLoading,
     error,
+    refetch,
     isConnected: !!address,
   };
 }
