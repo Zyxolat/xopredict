@@ -9,7 +9,6 @@ import { AppShell } from "@/components/app-shell";
 import { NetworkGuard } from "@/components/network-guard";
 import { UsdmApprovalGate } from "@/components/usdm-approval-gate";
 import { useCreateArena } from "@/lib/hooks/useCreateArena";
-import { useJoinArena } from "@/lib/hooks/useJoinArena";
 import { Gamepad2, PlusCircle, RefreshCw, Users, ShieldAlert, Sparkles, Trophy } from "lucide-react";
 
 interface ArenaItem {
@@ -27,7 +26,7 @@ interface ArenaItem {
 }
 
 export default function ArenaDiscoveryPage() {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [page, setPage] = useState<number>(1);
   const [arenas, setArenas] = useState<ArenaItem[]>([]);
@@ -47,12 +46,6 @@ export default function ArenaDiscoveryPage() {
     errorMessage: createErrorMessage,
     reset: resetCreate,
   } = useCreateArena();
-
-  const {
-    joinArena,
-    status: joinStatus,
-    errorMessage: joinErrorMessage,
-  } = useJoinArena();
 
   // Fetch Public Arenas with filters & pagination
   const fetchArenas = useCallback(async () => {

@@ -6,7 +6,7 @@ import { GET as idGet } from "@/app/api/arenas/[id]/route";
 import { POST as joinPost } from "@/app/api/arenas/join/route";
 import { POST as pickPost } from "@/app/api/arenas/pick/route";
 import { GET as statusGet } from "@/app/api/arenas/[id]/status/route";
-import { GET as privateGet, POST as privatePost } from "@/app/api/private-arenas/route";
+import { POST as privatePost } from "@/app/api/private-arenas/route";
 
 const SELF_USER_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const SELF_PLAYER_ID = "bbbbbbbb-0000-4000-8000-000000000001";

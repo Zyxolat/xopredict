@@ -20,7 +20,7 @@ export default function ArenaPage({ params }: { params: { id: string } }) {
   const arenaIdInput = params.id;
 
   // Hooks setup
-  const { arena, isLoading, isError, error, refetch } = useArena(arenaIdInput);
+  const { arena, isError, error, refetch } = useArena(arenaIdInput);
   const { statusData, isPolling, refetchNow } = useArenaPolling(arenaIdInput, 3000);
   const statusInfo = useArenaStatus(arena, statusData?.status);
 

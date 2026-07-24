@@ -318,10 +318,13 @@ describe("GET /api/daily-free-play?playerId=", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/players/[playerId] — requireSelf
 // ─────────────────────────────────────────────────────────────────────────────
+type RouteHandlerParam = (req: NextRequest, ctx: { params: { playerId: string } }) => Promise<Response>;
+type RouteHandlerNoParam = (req: NextRequest) => Promise<Response>;
+
 describe("GET /api/players/[playerId]", () => {
   async function call(playerId: string) {
     const req = get(`http://localhost/api/players/${playerId}`);
-    return (playersGet as Function)(req, { params: { playerId } });
+    return (playersGet as unknown as RouteHandlerParam)(req, { params: { playerId } });
   }
 
   it("returns 401 when not authenticated", async () => {
@@ -351,7 +354,7 @@ describe("GET /api/players/[playerId]", () => {
 describe("GET /api/players/me", () => {
   async function call() {
     const req = get("http://localhost/api/players/me");
-    return (playersMeGet as Function)(req);
+    return (playersMeGet as unknown as RouteHandlerNoParam)(req);
   }
 
   it("returns 401 when not authenticated", async () => {
@@ -375,7 +378,7 @@ describe("GET /api/players/me", () => {
 describe("POST /api/players/[playerId]/onboard", () => {
   async function call(playerId: string) {
     const req = json(`http://localhost/api/players/${playerId}/onboard`, {});
-    return (onboardPost as Function)(req, { params: { playerId } });
+    return (onboardPost as unknown as RouteHandlerParam)(req, { params: { playerId } });
   }
 
   it("returns 401 when not authenticated", async () => {

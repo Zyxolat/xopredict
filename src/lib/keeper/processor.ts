@@ -263,8 +263,6 @@ export async function processSoloJob(job: any) {
     throw new Error("Solo job missing roundId");
   }
 
-  const now = new Date();
-
   // STAGE 1: REQUEST_RANDOMNESS
   if (job.stage === "REQUEST_RANDOMNESS") {
     console.log(`[Keeper Solo Processor] Stage 1: Requesting randomness for round #${roundId.toString()}`);
@@ -619,7 +617,7 @@ export async function processArenaJob(job: any) {
   // STAGE 6: SETTLE_ARENA
   if (job.stage === "SETTLE_ARENA") {
     console.log(`[Keeper Arena Processor] Stage 6: Settling arena #${arenaId.toString()}`);
-    const { settleTxHash, onChainRound } = await settleRoundOnChain(activeRoundId);
+    const { settleTxHash } = await settleRoundOnChain(activeRoundId);
 
     job = await prisma.keeperJob.update({
       where: { id: job.id },
