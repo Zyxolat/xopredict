@@ -52,6 +52,7 @@ const mockPrisma = vi.hoisted(() => ({
   season:            { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
   seasonXp:          { findUnique: vi.fn(), findMany: vi.fn() },
   privateArena:      { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
+  arena:             { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
   verificationToken: { findUnique: vi.fn(), create: vi.fn() },
 }));
 
