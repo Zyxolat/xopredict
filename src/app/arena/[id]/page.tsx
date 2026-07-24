@@ -21,8 +21,8 @@ export default function ArenaPage({ params }: { params: { id: string } }) {
 
   // Hooks setup
   const { arena, isLoading, isError, error, refetch } = useArena(arenaIdInput);
-  const statusInfo = useArenaStatus(arena);
   const { statusData, isPolling, refetchNow } = useArenaPolling(arenaIdInput, 3000);
+  const statusInfo = useArenaStatus(arena, statusData?.status);
 
   const {
     joinArena,
@@ -113,12 +113,12 @@ export default function ArenaPage({ params }: { params: { id: string } }) {
                 : "border-white/20 text-white/70 bg-white/5"
             }`}
           >
-            ● {currentStatus} PHASE
+            ● {currentStatus}
           </span>
 
           <span className="flex items-center gap-1.5 text-[#d5a7ff] font-mono text-sm">
             <Clock size={16} />
-            {statusInfo.isOpen ? "WAITING FOR PLAYERS" : statusInfo.isPickingPhase ? "PICK CARD NOW" : "RESERVED"}
+            {statusInfo.displayLabel}
           </span>
         </div>
 

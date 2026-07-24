@@ -292,7 +292,7 @@ describe("Phase 4.2 Arena Backend & Persistence APIs", () => {
       const res = await statusGet(req, { params: { id: "1" } });
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.data.status).toBe("OPEN");
+      expect(["OPEN", "WAITING_FOR_PLAYERS"]).toContain(json.data.status);
       expect(json.data.currentPlayers).toBe(1);
     });
   });

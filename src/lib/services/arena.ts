@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { DbArenaStatus } from "@prisma/client";
 import { publicClient } from "@/lib/keeper/wallet";
 import { xolatAbi, xolatAddress } from "@/lib/contracts";
+import { registerArenaEvent } from "@/lib/keeper/listener";
+import { processKeeperJob } from "@/lib/keeper/processor";
 
 export const ONCHAIN_STATUS_MAP: Record<number, DbArenaStatus> = {
   0: "OPEN",
@@ -122,12 +124,12 @@ export class ArenaService {
   }
 
   /**
-   * Create an arena record in DB
+   * Create an arena record in DB and register Keeper job
    */
   static async createArena(input: CreateArenaInput) {
     const creatorLower = input.creatorAddress.toLowerCase();
 
-    return prisma.arena.create({
+    const createdArena = await prisma.arena.create({
       data: {
         arenaId: input.arenaId,
         creatorAddress: creatorLower,
@@ -141,6 +143,18 @@ export class ArenaService {
         expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
       },
     });
+
+    // Register Keeper job for automatic lifecycle tracking
+    void registerArenaEvent({
+      arenaId: input.arenaId,
+      creatorAddress: creatorLower,
+      betAmount: input.betAmount,
+      maxPlayers: input.maxPlayers,
+    }).catch((err) => {
+      console.error(`[ArenaService] Error registering keeper job for arena #${input.arenaId.toString()}:`, err);
+    });
+
+    return createdArena;
   }
 
   /**
@@ -177,7 +191,7 @@ export class ArenaService {
     const isFull = nextCount >= arena.maxPlayers;
     const nextStatus: DbArenaStatus = isFull ? "FULL" : "OPEN";
 
-    return prisma.arena.update({
+    const updatedArena = await prisma.arena.update({
       where: { arenaId: input.arenaId },
       data: {
         currentPlayers: nextCount,
@@ -185,6 +199,16 @@ export class ArenaService {
         status: nextStatus,
       },
     });
+
+    // Ensure Keeper job is registered / triggered
+    void registerArenaEvent({
+      arenaId: input.arenaId,
+      creatorAddress: arena.creatorAddress || playerLower,
+      betAmount: arena.betAmount ? arena.betAmount.toString() : "10",
+      maxPlayers: arena.maxPlayers || 2,
+    }).catch(() => {});
+
+    return updatedArena;
   }
 
   /**
@@ -212,12 +236,17 @@ export class ArenaService {
       throw new Error("Player is not in this arena");
     }
 
-    return prisma.arena.update({
+    const updatedArena = await prisma.arena.update({
       where: { arenaId: input.arenaId },
       data: {
         status: "PICKING",
       },
     });
+
+    // Trigger Keeper processing
+    void processKeeperJob(input.arenaId).catch(() => {});
+
+    return updatedArena;
   }
 
   /**
@@ -252,8 +281,8 @@ export class ArenaService {
         ,
         ,
         onChainPlayerCount,
-        onChainSettled,
-        onChainWinner,
+        ,
+        ,
         ,
         onChainPlayers,
         onChainStatusIndex,
@@ -262,7 +291,7 @@ export class ArenaService {
       const syncedStatus = ONCHAIN_STATUS_MAP[onChainStatusIndex] || arena.status;
       const syncedPlayers = onChainPlayers.map((p) => p.toLowerCase());
 
-      return prisma.arena.update({
+      const updated = await prisma.arena.update({
         where: { arenaId },
         data: {
           currentPlayers: Number(onChainPlayerCount),
@@ -270,6 +299,13 @@ export class ArenaService {
           status: syncedStatus,
         },
       });
+
+      // Trigger background Keeper job processing
+      if (syncedStatus !== "SETTLED" && syncedStatus !== "REFUNDED" && syncedStatus !== "EXPIRED") {
+        void processKeeperJob(arenaId).catch(() => {});
+      }
+
+      return updated;
     } catch (err) {
       console.warn(`[ArenaService] On-chain sync warning for arena #${arenaId.toString()}:`, err);
       return arena;

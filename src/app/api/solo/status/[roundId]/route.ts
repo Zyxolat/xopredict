@@ -41,7 +41,7 @@ export async function GET(
 
     return NextResponse.json({
       ok: true,
-      roundId: job.roundId.toString(),
+      roundId: (job.roundId ?? roundId).toString(),
       stage: job.stage,
       status: job.status,
       requestBlock: job.requestBlock?.toString() || null,

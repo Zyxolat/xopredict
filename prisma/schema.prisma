@@ -19,10 +19,14 @@ enum CosmeticType {
 }
 
 enum KeeperStage {
+  WAIT_FOR_FULL_ARENA
+  WAIT_FOR_ALL_CARD_PICKS
   REQUEST_RANDOMNESS
   AWAIT_WITNET
   FETCH_RANDOMNESS
   SETTLE_ROUND
+  SETTLE_ARENA
+  SYNC_DATABASE
   COMPLETED
   FAILED
   REFUNDED
@@ -37,10 +41,12 @@ enum KeeperJobStatus {
 
 model KeeperJob {
   id            String          @id @default(uuid())
-  roundId       BigInt          @unique
+  roundId       BigInt?         @unique
+  arenaId       BigInt?         @unique
+  type          String          @default("SOLO")
   playerAddress String
   betAmount     Decimal         @db.Decimal(36, 18)
-  cardIndex     Int
+  cardIndex     Int             @default(0)
   stage         KeeperStage     @default(REQUEST_RANDOMNESS)
   status        KeeperJobStatus @default(PENDING)
   requestBlock  BigInt?

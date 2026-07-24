@@ -1,8 +1,12 @@
 import { KeeperStage, KeeperJobStatus } from "@prisma/client";
 
+export type KeeperJobType = "SOLO" | "ARENA";
+
 export interface KeeperJobData {
   id: string;
-  roundId: string;
+  roundId?: string | null;
+  arenaId?: string | null;
+  type: KeeperJobType;
   playerAddress: string;
   betAmount: string;
   cardIndex: number;
@@ -21,7 +25,8 @@ export interface KeeperJobData {
 
 export interface KeeperStatusResponse {
   ok: boolean;
-  roundId: string;
+  roundId?: string | null;
+  arenaId?: string | null;
   stage: KeeperStage;
   status: KeeperJobStatus;
   requestTxHash?: string | null;
@@ -36,6 +41,10 @@ export function getStageDescription(stage: KeeperStage, status: KeeperJobStatus)
   if (status === "COMPLETED" || stage === "COMPLETED") return "Game completed & settled on-chain.";
 
   switch (stage) {
+    case "WAIT_FOR_FULL_ARENA":
+      return "Waiting for players to fill arena...";
+    case "WAIT_FOR_ALL_CARD_PICKS":
+      return "Waiting for all players to pick their cards...";
     case "REQUEST_RANDOMNESS":
       return "Submitting requestRandomness() to Witnet oracle...";
     case "AWAIT_WITNET":
@@ -43,7 +52,11 @@ export function getStageDescription(stage: KeeperStage, status: KeeperJobStatus)
     case "FETCH_RANDOMNESS":
       return "Fetching verified randomness from Witnet on-chain...";
     case "SETTLE_ROUND":
-      return "Settling round & executing payouts...";
+      return "Settling solo round & executing payout...";
+    case "SETTLE_ARENA":
+      return "Settling arena round & executing payouts...";
+    case "SYNC_DATABASE":
+      return "Synchronizing database records & stats...";
     case "REFUNDED":
       return "Round timed out & full USDm refund processed.";
     default:
