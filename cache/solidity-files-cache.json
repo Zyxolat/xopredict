@@ -389,8 +389,8 @@
       ]
     },
     "/home/zyxolat/Desktop/Xopredict/contracts/Xolat.sol": {
-      "lastModificationDate": 1784585931260,
-      "contentHash": "8b2485800e3ecdb4ef056cf65a0c23c6",
+      "lastModificationDate": 1784906698985,
+      "contentHash": "af1854c525cba47ec114b824bed6111f",
       "sourceName": "contracts/Xolat.sol",
       "solcConfig": {
         "version": "0.8.24",

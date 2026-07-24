@@ -139,6 +139,7 @@ export interface XolatInterface extends Interface {
       | "RANDOMNESS_TIMEOUT"
       | "applyCooldown"
       | "arenaCount"
+      | "arenaTimeout"
       | "arenas"
       | "ban"
       | "blacklist"
@@ -166,11 +167,13 @@ export interface XolatInterface extends Interface {
       | "pickSoloCard"
       | "playerStats"
       | "randomnessRequests"
+      | "refundUnfilledArena"
       | "renounceOwnership"
       | "requestRandomness"
       | "revealSeeds"
       | "roundCount"
       | "rounds"
+      | "setArenaTimeout"
       | "setCooldownParams"
       | "setMaxBet"
       | "settleRound"
@@ -185,6 +188,7 @@ export interface XolatInterface extends Interface {
   getEvent(
     nameOrSignatureOrTopic:
       | "ArenaCreated"
+      | "ArenaRefunded"
       | "CardPicked"
       | "CooldownApplied"
       | "OwnershipTransferred"
@@ -212,6 +216,10 @@ export interface XolatInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "arenaCount",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "arenaTimeout",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -311,6 +319,10 @@ export interface XolatInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "refundUnfilledArena",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "renounceOwnership",
     values?: undefined
   ): string;
@@ -328,6 +340,10 @@ export interface XolatInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "rounds",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setArenaTimeout",
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
@@ -364,6 +380,10 @@ export interface XolatInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "arenaCount", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "arenaTimeout",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "arenas", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "ban", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "blacklist", data: BytesLike): Result;
@@ -443,6 +463,10 @@ export interface XolatInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "refundUnfilledArena",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "renounceOwnership",
     data: BytesLike
   ): Result;
@@ -456,6 +480,10 @@ export interface XolatInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "roundCount", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "rounds", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setArenaTimeout",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "setCooldownParams",
     data: BytesLike
@@ -497,6 +525,19 @@ export namespace ArenaCreatedEvent {
     creator: string;
     betAmount: bigint;
     maxPlayers: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace ArenaRefundedEvent {
+  export type InputTuple = [arenaId: BigNumberish, reason: string];
+  export type OutputTuple = [arenaId: bigint, reason: string];
+  export interface OutputObject {
+    arenaId: bigint;
+    reason: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -842,6 +883,8 @@ export interface Xolat extends BaseContract {
 
   arenaCount: TypedContractMethod<[], [bigint], "view">;
 
+  arenaTimeout: TypedContractMethod<[], [bigint], "view">;
+
   arenas: TypedContractMethod<
     [arg0: BigNumberish],
     [
@@ -852,6 +895,7 @@ export interface Xolat extends BaseContract {
         bigint,
         boolean,
         string,
+        bigint,
         bigint,
         bigint,
         bigint
@@ -865,6 +909,7 @@ export interface Xolat extends BaseContract {
         createdAt: bigint;
         roundId: bigint;
         pickedCount: bigint;
+        status: bigint;
       }
     ],
     "view"
@@ -904,7 +949,19 @@ export interface Xolat extends BaseContract {
 
   getArena: TypedContractMethod<
     [arenaId: BigNumberish],
-    [[bigint, bigint, bigint, bigint, boolean, string, bigint, string[]]],
+    [
+      [
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        boolean,
+        string,
+        bigint,
+        string[],
+        bigint
+      ]
+    ],
     "view"
   >;
 
@@ -989,6 +1046,12 @@ export interface Xolat extends BaseContract {
     "view"
   >;
 
+  refundUnfilledArena: TypedContractMethod<
+    [arenaId: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
   requestRandomness: TypedContractMethod<
@@ -1050,6 +1113,12 @@ export interface Xolat extends BaseContract {
     "view"
   >;
 
+  setArenaTimeout: TypedContractMethod<
+    [duration: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   setCooldownParams: TypedContractMethod<
     [duration: BigNumberish, losses: BigNumberish],
     [void],
@@ -1102,6 +1171,9 @@ export interface Xolat extends BaseContract {
     nameOrSignature: "arenaCount"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "arenaTimeout"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "arenas"
   ): TypedContractMethod<
     [arg0: BigNumberish],
@@ -1115,6 +1187,7 @@ export interface Xolat extends BaseContract {
         string,
         bigint,
         bigint,
+        bigint,
         bigint
       ] & {
         arenaId: bigint;
@@ -1126,6 +1199,7 @@ export interface Xolat extends BaseContract {
         createdAt: bigint;
         roundId: bigint;
         pickedCount: bigint;
+        status: bigint;
       }
     ],
     "view"
@@ -1162,7 +1236,19 @@ export interface Xolat extends BaseContract {
     nameOrSignature: "getArena"
   ): TypedContractMethod<
     [arenaId: BigNumberish],
-    [[bigint, bigint, bigint, bigint, boolean, string, bigint, string[]]],
+    [
+      [
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        boolean,
+        string,
+        bigint,
+        string[],
+        bigint
+      ]
+    ],
     "view"
   >;
   getFunction(
@@ -1264,6 +1350,9 @@ export interface Xolat extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "refundUnfilledArena"
+  ): TypedContractMethod<[arenaId: BigNumberish], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "renounceOwnership"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
@@ -1326,6 +1415,9 @@ export interface Xolat extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "setArenaTimeout"
+  ): TypedContractMethod<[duration: BigNumberish], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "setCooldownParams"
   ): TypedContractMethod<
     [duration: BigNumberish, losses: BigNumberish],
@@ -1367,6 +1459,13 @@ export interface Xolat extends BaseContract {
     ArenaCreatedEvent.InputTuple,
     ArenaCreatedEvent.OutputTuple,
     ArenaCreatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "ArenaRefunded"
+  ): TypedContractEvent<
+    ArenaRefundedEvent.InputTuple,
+    ArenaRefundedEvent.OutputTuple,
+    ArenaRefundedEvent.OutputObject
   >;
   getEvent(
     key: "CardPicked"
@@ -1484,6 +1583,17 @@ export interface Xolat extends BaseContract {
       ArenaCreatedEvent.InputTuple,
       ArenaCreatedEvent.OutputTuple,
       ArenaCreatedEvent.OutputObject
+    >;
+
+    "ArenaRefunded(uint256,string)": TypedContractEvent<
+      ArenaRefundedEvent.InputTuple,
+      ArenaRefundedEvent.OutputTuple,
+      ArenaRefundedEvent.OutputObject
+    >;
+    ArenaRefunded: TypedContractEvent<
+      ArenaRefundedEvent.InputTuple,
+      ArenaRefundedEvent.OutputTuple,
+      ArenaRefundedEvent.OutputObject
     >;
 
     "CardPicked(uint256,address,uint8)": TypedContractEvent<
