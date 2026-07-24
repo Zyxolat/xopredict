@@ -1,16 +1,30 @@
-import { cookieStorage, createConfig, createStorage, http } from "wagmi";
+import { createAppKit } from "@reown/appkit/react";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { celo } from "wagmi/chains";
-import { injected, walletConnect } from "wagmi/connectors";
 
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 
-export const wagmiConfig = createConfig({
-  chains: [celo],
-  connectors: [
-    injected(),
-    ...(projectId ? [walletConnect({ projectId, showQrModal: true })] : []),
-  ],
+if (!projectId) {
+  throw new Error("NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is required to use Reown AppKit");
+}
+
+const wagmiAdapter = new WagmiAdapter({
+  networks: [celo],
+  projectId,
   ssr: true,
-  storage: createStorage({ storage: cookieStorage }),
-  transports: { [celo.id]: http(process.env.NEXT_PUBLIC_CELO_RPC_URL) },
 });
+
+createAppKit({
+  adapters: [wagmiAdapter],
+  networks: [celo],
+  projectId,
+  metadata: {
+    name: "XOLAT",
+    description: "USDm prediction arena on Celo",
+    url: "https://xopredict.com",
+    icons: [],
+  },
+  themeMode: "dark",
+});
+
+export const wagmiConfig = wagmiAdapter.wagmiConfig;

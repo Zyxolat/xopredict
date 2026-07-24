@@ -1,6 +1,8 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import hre from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+
+const { ethers } = hre as typeof hre & { ethers: typeof import("ethers") };
 
 describe("Xolat Witnet specification", function () {
   const BET = ethers.parseUnits("10", 18);

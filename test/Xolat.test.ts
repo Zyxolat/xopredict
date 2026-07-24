@@ -1,8 +1,10 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import hre from "hardhat";
 import { Xolat } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+
+const { ethers } = hre as typeof hre & { ethers: typeof import("ethers") };
 
 describe("Xolat.sol", function () {
   let xolat: Xolat;

@@ -1,9 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
 import Link from "next/link";
 import { Gamepad2, History, Trophy, UserRound } from "lucide-react";
+import { ConnectButton } from "@/components/connect-button";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -36,8 +36,6 @@ const tickerVariants = {
 };
 
 export default function Home() {
-  const [connected, setConnected] = useState(false);
-
   const navItems = [
     { href: "/", label: "ARENA", icon: Gamepad2 },
     { href: "/solo", label: "SOLO", icon: Trophy },
@@ -59,16 +57,14 @@ export default function Home() {
             <span className="grid h-7 w-7 place-items-center text-2xl text-[#d5a7ff]">⬡</span>
             <span className="text-3xl font-black italic tracking-[-0.09em] text-[#d6a8ff]">XOLAT</span>
           </motion.div>
-          <motion.button 
-            onClick={() => setConnected(!connected)}
-            className="rounded-full border border-[#8d739c] bg-[#211a27] px-4 py-2 font-mono text-xs tracking-[.16em] text-[#e1c3ff] transition hover:border-[#d3a4ff]"
+          <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
             whileHover={{ scale: 1.05 }}
           >
-            {connected ? "CONNECT" : "CONNECT"}
-          </motion.button>
+            <ConnectButton />
+          </motion.div>
         </div>
       </header>
 
@@ -103,15 +99,14 @@ export default function Home() {
           The next-gen liquidity prediction protocol.<br />Harness market volatility and multiply your<br />USDm holdings.
         </motion.p>
 
-        <motion.button
-          onClick={() => setConnected(true)}
-          className="relative mt-12 rounded-2xl bg-[#4ce47d] px-6 py-4 text-xl font-black tracking-[.05em] text-black shadow-[0_0_28px_rgba(76,228,125,.25)] transition hover:scale-[1.03]"
+        <motion.div
+          className="relative mt-12"
           variants={itemVariants}
           whileHover={{ scale: 1.08, boxShadow: "0 0 40px rgba(76,228,125,.35)" }}
           whileTap={{ scale: 0.95 }}
         >
-          CONNECT WALLET
-        </motion.button>
+          <ConnectButton />
+        </motion.div>
 
         <motion.button
           className="relative mt-9 w-full max-w-[340px] rounded-xl border border-white/15 bg-white/[.025] py-4 font-mono text-xs tracking-[.2em] text-[#e7dce9] transition hover:bg-white/[.07]"

@@ -22,18 +22,31 @@ export function CosmeticsShop() {
   const { data: session } = useSession();
   const [shop, setShop] = useState<CosmeticItem[]>([]);
   const [owned, setOwned] = useState<CosmeticOwned[]>([]);
+  const [playerId, setPlayerId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!session?.user?.playerId) return;
+    const userId = session?.user?.id;
+    if (!userId) return;
 
-    const fetchShop = async () => {
+    const fetchShopAndPlayer = async () => {
       try {
-        const res = await fetch(`/api/cosmetics?playerId=${session.user!.playerId}`);
-        const data = await res.json();
-        setShop(data.data.shop);
-        setOwned(data.data.owned);
+        setLoading(true);
+        // Look up Player separately using the user's session
+        const playerRes = await fetch("/api/players/me");
+        if (!playerRes.ok) throw new Error("Failed to load player profile");
+        const playerData = await playerRes.json();
+        const pId = playerData.data?.id;
+        if (!pId) throw new Error("Player not found");
+
+        setPlayerId(pId);
+
+        const shopRes = await fetch(`/api/cosmetics?playerId=${pId}`);
+        if (!shopRes.ok) throw new Error("Failed to fetch cosmetics shop");
+        const shopData = await shopRes.json();
+        setShop(shopData.data.shop);
+        setOwned(shopData.data.owned);
       } catch (error) {
         console.error("Failed to fetch cosmetics:", error);
       } finally {
@@ -41,11 +54,11 @@ export function CosmeticsShop() {
       }
     };
 
-    fetchShop();
-  }, [session?.user]);
+    fetchShopAndPlayer();
+  }, [session?.user?.id]);
 
   const handlePurchase = async (item: CosmeticItem) => {
-    if (!session?.user?.playerId) return;
+    if (!playerId) return;
 
     setPurchasing(`${item.type}_${item.name}`);
     try {
@@ -53,7 +66,7 @@ export function CosmeticsShop() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          playerId: session.user!.playerId,
+          playerId,
           type: item.type,
           name: item.name,
         }),

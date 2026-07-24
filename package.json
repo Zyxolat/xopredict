@@ -3,19 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test": "vitest run",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "prisma:generate": "prisma generate",
+    "test:wallet-merge": "node --env-file=.env.local --import tsx scripts/test-wallet-merge.ts",
     "contract:compile": "hardhat compile"
   },
   "dependencies": {
+    "@metamask/connect-evm": "^2.1.1",
     "@next-auth/prisma-adapter": "^1.0.7",
     "@openzeppelin/contracts": "^5.6.1",
     "@prisma/client": "^6.19.3",
     "@reown/appkit": "^1.8.22",
     "@reown/appkit-adapter-wagmi": "^1.8.22",
+    "accounts": "^0.14.12",
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^12.42.2",
     "html2canvas": "^1.4.1",
@@ -23,11 +27,12 @@
     "next": "14.2.35",
     "next-auth": "^4.24.14",
     "nodemailer": "^7.0.13",
+    "porto": "^0.2.37",
     "react": "^18",
     "react-dom": "^18",
     "react-joyride": "^3.2.0",
     "viem": "^2.55.2",
-    "wagmi": "^2.19.5",
+    "wagmi": "^3.7.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -37,6 +42,7 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "hardhat": "^2.28.6",
@@ -44,6 +50,9 @@
     "postcss": "^8",
     "prisma": "^6.19.3",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "tsx": "^4.23.1",
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.10"
   }
 }

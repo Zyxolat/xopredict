@@ -3,28 +3,23 @@
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider } from "next-auth/react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { wagmiConfig } from "@/lib/wagmi";
+import { useWalletPersistence } from "@/lib/hooks/useWalletPersistence";
+
+function WalletSessionRestorer() {
+  useWalletPersistence();
+  return null;
+}
 
 export function Web3Provider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    // Restore wallet from localStorage on mount
-    const savedWallet = localStorage.getItem("walletAddress");
-    if (savedWallet) {
-      // This will trigger auto-reconnect through wagmi
-    }
-    setIsMounted(true);
-  }, []);
-
-  if (!isMounted) return null;
 
   return (
     <SessionProvider>
-      <WagmiProvider config={wagmiConfig}>
+      <WagmiProvider config={wagmiConfig} reconnectOnMount>
         <QueryClientProvider client={queryClient}>
+          <WalletSessionRestorer />
           {children}
         </QueryClientProvider>
       </WagmiProvider>

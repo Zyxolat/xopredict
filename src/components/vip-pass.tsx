@@ -13,16 +13,20 @@ interface VIPPassInfo {
 
 export function VIPPass() {
   const { data: session } = useSession();
+  const playerId = session?.user?.playerId;
   const [vipInfo, setVipInfo] = useState<VIPPassInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
 
   useEffect(() => {
-    if (!session?.user?.playerId) return;
+    if (!playerId) {
+      setLoading(false);
+      return;
+    }
 
     const fetchVIP = async () => {
       try {
-        const res = await fetch(`/api/vip?playerId=${session.user!.playerId}`);
+        const res = await fetch(`/api/vip?playerId=${playerId}`);
         const data = await res.json();
         setVipInfo(data.data);
       } catch (error) {
@@ -33,23 +37,23 @@ export function VIPPass() {
     };
 
     fetchVIP();
-  }, [session?.user]);
+  }, [playerId]);
 
   const handlePurchase = async () => {
-    if (!session?.user?.playerId) return;
+    if (!playerId) return;
 
     setPurchasing(true);
     try {
       const res = await fetch("/api/vip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId: session.user!.playerId }),
+        body: JSON.stringify({ playerId }),
       });
 
       if (res.ok) {
         alert("VIP pass purchased! Enjoy premium benefits.");
         // Refresh VIP info
-        const res2 = await fetch(`/api/vip?playerId=${session.user!.playerId}`);
+        const res2 = await fetch(`/api/vip?playerId=${playerId}`);
         const data = await res2.json();
         setVipInfo(data.data);
       } else {

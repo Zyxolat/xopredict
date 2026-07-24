@@ -1,4 +1,6 @@
-import hre, { ethers } from "hardhat";
+import hre from "hardhat";
+
+const { ethers } = hre as typeof hre & { ethers: typeof import("ethers") };
 import * as fs from "fs";
 import * as path from "path";
 

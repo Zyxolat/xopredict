@@ -151,6 +151,37 @@ npx hardhat run scripts/deploy.ts --network celo-mainnet
 - [ ] Demo safety caps (1 USDm/tx, 5 USDm/day) are acceptable for your use case
 - [ ] You understand this is a DEMO/HACKATHON deployment (NOT production-ready, NOT audited)
 
+### Database Schema Drift Check
+
+Run these commands from a clean working tree before deploying any application
+that uses Supabase. `DIRECT_URL` must target the IPv4 session pooler and include
+`sslmode=require`.
+
+```bash
+git diff --exit-code -- prisma/schema.prisma
+npx prisma migrate diff \
+   --from-url "$DIRECT_URL" \
+   --to-schema-datamodel prisma/schema.prisma \
+   --exit-code
+```
+
+Both commands must exit with status `0`. A nonzero result means either the
+checked-in Prisma schema has uncommitted changes or the live database does not
+match it. Stop the deployment and reconcile the schema before continuing.
+
+### Demo Route Pre-Warm
+
+Before a live demo, start the application and request the login route once so
+the Reown and wallet client bundle compiles before the judges arrive:
+
+```bash
+curl --fail --silent --output /dev/null http://localhost:3000/login
+```
+
+Confirm a second request returns promptly before beginning the demo. The first
+development-mode request may take substantially longer while the wallet bundle
+compiles.
+
 ---
 
 ## 📍 NEXT STEPS
