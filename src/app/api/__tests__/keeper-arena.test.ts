@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { registerArenaEvent } from "@/lib/keeper/listener";
+import { registerRoundCreatedEvent, registerArenaEvent } from "@/lib/keeper/listener";
+import { processKeeperJob, processArenaJob } from "@/lib/keeper/processor";
 import { getStageDescription } from "@/lib/keeper/types";
 
 const mockPrisma = vi.hoisted(() => ({
@@ -8,6 +9,7 @@ const mockPrisma = vi.hoisted(() => ({
     findFirst: vi.fn(),
     findMany: vi.fn(),
     upsert: vi.fn(),
+    create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
   },
@@ -55,37 +57,166 @@ describe("Phase 4.4 - Arena Keeper Integration & State Machine", () => {
   });
 
   describe("Keeper Listener for Arena Events", () => {
-    it("registers an Arena KeeperJob idempotently", async () => {
-      mockPrisma.keeperJob.upsert.mockResolvedValue({
+    it("registers an Arena KeeperJob idempotently on RoundCreated", async () => {
+      mockPrisma.keeperJob.findFirst.mockResolvedValue(null);
+      mockPrisma.keeperJob.create.mockResolvedValue({
         id: "keeper-job-uuid-1",
+        roundId: 50n,
         arenaId: 100n,
         type: "ARENA",
-        stage: "WAIT_FOR_FULL_ARENA",
+        stage: "REQUEST_RANDOMNESS",
         status: "PENDING",
       });
 
-      const job = await registerArenaEvent({
+      const job = await registerRoundCreatedEvent({
+        roundId: 50n,
+        roundType: "arena",
         arenaId: 100n,
-        creatorAddress: "0xCreatorAddress",
-        betAmount: "10",
-        maxPlayers: 2,
+        playerAddress: "0xPlayer1",
+        potUsdm: "20",
       });
 
-      expect(mockPrisma.keeperJob.upsert).toHaveBeenCalledWith({
-        where: { arenaId: 100n },
-        update: {},
-        create: {
+      expect(mockPrisma.keeperJob.create).toHaveBeenCalledWith({
+        data: {
+          roundId: 50n,
           arenaId: 100n,
           type: "ARENA",
-          playerAddress: "0xCreatorAddress",
-          betAmount: "10",
+          playerAddress: "0xPlayer1",
+          betAmount: "20",
           cardIndex: 0,
-          stage: "WAIT_FOR_FULL_ARENA",
+          stage: "REQUEST_RANDOMNESS",
           status: "PENDING",
         },
       });
 
-      expect(job?.stage).toBe("WAIT_FOR_FULL_ARENA");
+      expect(job?.stage).toBe("REQUEST_RANDOMNESS");
+    });
+
+    it("prevents duplicate Arena KeeperJob creation", async () => {
+      mockPrisma.keeperJob.findFirst.mockResolvedValue({
+        id: "existing-job-1",
+        arenaId: 100n,
+        roundId: 50n,
+        type: "ARENA",
+        stage: "REQUEST_RANDOMNESS",
+      });
+
+      mockPrisma.keeperJob.update.mockResolvedValue({
+        id: "existing-job-1",
+        arenaId: 100n,
+        roundId: 50n,
+        type: "ARENA",
+        stage: "REQUEST_RANDOMNESS",
+        status: "PENDING",
+      });
+
+      const job = await registerRoundCreatedEvent({
+        roundId: 50n,
+        roundType: "arena",
+        arenaId: 100n,
+        playerAddress: "0xPlayer1",
+        potUsdm: "20",
+      });
+
+      expect(mockPrisma.keeperJob.create).not.toHaveBeenCalled();
+      expect(mockPrisma.keeperJob.update).toHaveBeenCalledWith({
+        where: { id: "existing-job-1" },
+        data: expect.objectContaining({
+          roundId: 50n,
+          arenaId: 100n,
+          stage: "REQUEST_RANDOMNESS",
+        }),
+      });
+
+      expect(job?.id).toBe("existing-job-1");
+    });
+
+    it("ignores non-arena events without creating job", async () => {
+      const res = await registerRoundCreatedEvent({
+        roundId: 50n,
+        roundType: "other",
+        arenaId: null,
+        playerAddress: "0xPlayer1",
+        potUsdm: "20",
+      });
+
+      expect(res).toBeNull();
+    });
+  });
+
+  describe("Arena Keeper Processor Lifecycle & Idempotency", () => {
+    it("skips fetchRandomness if round is already revealed on-chain", async () => {
+      mockPublicClient.readContract.mockResolvedValue([
+        50n, "arena", "0xPlayer1", 100n, "0xCommit", "seed1", "seed2", 1n, "0xRandomness",
+        [10n, 20n], "0xWinner", 20000000000000000000n, "0xTx", 0, "revealed", 1000n
+      ]);
+
+      const job = {
+        id: "job-1",
+        arenaId: 100n,
+        roundId: 50n,
+        stage: "FETCH_RANDOMNESS",
+        status: "PROCESSING",
+        createdAt: new Date(),
+      };
+
+      mockPrisma.arena.update.mockResolvedValue({});
+      mockPrisma.keeperJob.update.mockResolvedValue({
+        ...job,
+        stage: "SETTLE_ARENA",
+      });
+
+      await processArenaJob(job);
+
+      // Should NOT call writeContract for fetchRandomness
+      expect(mockWalletClient.writeContract).not.toHaveBeenCalledWith(
+        expect.objectContaining({ functionName: "fetchRandomness" })
+      );
+      expect(mockPrisma.keeperJob.update).toHaveBeenCalledWith({
+        where: { id: "job-1" },
+        data: expect.objectContaining({
+          stage: "SETTLE_ARENA",
+        }),
+      });
+    });
+
+    it("skips settleRound if round is already completed on-chain", async () => {
+      mockPublicClient.readContract.mockImplementation(async ({ functionName }) => {
+        if (functionName === "getRound") {
+          return [
+            50n, "arena", "0xPlayer1", 100n, "0xCommit", "seed1", "seed2", 1n, "0xRandomness",
+            [10n, 20n], "0xWinner", 20000000000000000000n, "0xSettleTx", 0, "completed", 1000n
+          ];
+        }
+        return null;
+      });
+
+      mockPrisma.arena.findUnique.mockResolvedValue({ arenaId: 100n, status: "REVEALED" });
+      mockPrisma.arena.update.mockResolvedValue({});
+      mockPrisma.round.upsert.mockResolvedValue({});
+      mockPrisma.player.findFirst.mockResolvedValue({ id: "p1", address: "0xWinner" });
+      mockPrisma.player.update.mockResolvedValue({});
+      mockPrisma.keeperJob.update.mockResolvedValue({
+        id: "job-1",
+        stage: "COMPLETED",
+        status: "COMPLETED",
+      });
+
+      const job = {
+        id: "job-1",
+        arenaId: 100n,
+        roundId: 50n,
+        stage: "SETTLE_ARENA",
+        status: "PROCESSING",
+        createdAt: new Date(),
+      };
+
+      const res = await processArenaJob(job);
+
+      // Should NOT writeContract for settleRound
+      expect(mockWalletClient.writeContract).not.toHaveBeenCalled();
+      expect(res.stage).toBe("COMPLETED");
+      expect(res.status).toBe("COMPLETED");
     });
   });
 
