@@ -1,6 +1,6 @@
 import { KeeperStage, KeeperJobStatus } from "@prisma/client";
 
-export type KeeperJobType = "SOLO" | "ARENA";
+export type KeeperJobType = "SOLO" | "ARENA" | "solo" | "arena";
 
 export interface KeeperJobData {
   id: string;
