@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ArenaService } from "@/lib/services/arena";
 import { prisma } from "@/lib/prisma";
+import { getStageDescription } from "@/lib/keeper/types";
 
 export const dynamic = "force-dynamic";
 
@@ -100,14 +101,28 @@ export async function GET(
       )
     );
 
+    const stageDesc = keeperJob
+      ? getStageDescription(keeperJob.stage, keeperJob.status)
+      : "Processing arena on-chain...";
+
+    const txHash =
+      keeperJob?.settleTxHash ||
+      keeperJob?.fetchTxHash ||
+      keeperJob?.requestTxHash ||
+      null;
+
     return NextResponse.json({
       data: {
         arena: serialized,
+        stage: productionStatus,
         status: productionStatus,
+        message: stageDesc,
+        txHash,
         rawStatus: arena.status,
         keeperStage: keeperJob?.stage || null,
         keeperStatus: keeperJob?.status || null,
         requestTxHash: keeperJob?.requestTxHash || null,
+        fetchTxHash: keeperJob?.fetchTxHash || null,
         settleTxHash: keeperJob?.settleTxHash || null,
         currentPlayers: arena.currentPlayers,
         maxPlayers: arena.maxPlayers,
