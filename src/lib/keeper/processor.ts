@@ -614,8 +614,8 @@ export async function processArenaJob(job: any) {
     });
   }
 
-  // STAGE 6: SETTLE_ARENA
-  if (job.stage === "SETTLE_ARENA") {
+  // STAGE 6: SETTLE_ARENA / SETTLE_ROUND
+  if (job.stage === "SETTLE_ARENA" || job.stage === "SETTLE_ROUND") {
     console.log(`[Keeper Arena Processor] Stage 6: Settling arena #${arenaId.toString()}`);
     const { settleTxHash } = await settleRoundOnChain(activeRoundId);
 
@@ -800,7 +800,7 @@ export async function processKeeperJob(identifierInput: bigint | string) {
 
   try {
     // DISPATCHER: SWITCH (job.type)
-    switch (job.type) {
+    switch (job.type ? job.type.toUpperCase() : "SOLO") {
       case "ARENA":
         return await processArenaJob(job);
       case "SOLO":
