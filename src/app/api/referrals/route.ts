@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
 
     const { playerId, referrerId } = await req.json();
 
-    // Validate IDs
     const playerParsed = playerIdSchema.safeParse(playerId);
     const referrerParsed = referrerId
       ? playerIdSchema.safeParse(referrerId)
@@ -29,11 +28,9 @@ export async function POST(req: NextRequest) {
     const player = playerParsed.data;
     const referrer = referrerParsed.data;
 
-    // Only the authenticated player may register their own referral.
     const fail = assertSelf(auth, player!);
     if (fail) return fail.response;
 
-    // Check if player already has a referrer
     const existingReferral = await prisma.referral.findUnique({
       where: { refereeId: player },
     });
@@ -46,7 +43,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (referrer) {
-      // Verify referrer exists
       const referrerPlayer = await prisma.player.findUnique({
         where: { id: referrer },
       });
@@ -55,7 +51,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Referrer not found" }, { status: 404 });
       }
 
-      // Create referral relationship
       const referral = await prisma.referral.create({
         data: {
           referrerId: referrer,
@@ -100,16 +95,26 @@ export async function GET(req: NextRequest) {
 
     const pId = parsed.data;
 
-    // Get referral info as referee
     const asReferre = await prisma.referral.findUnique({
       where: { refereeId: pId },
-      include: { referrer: { select: { username: true } } },
+      include: {
+        referrer: {
+          include: {
+            user: { select: { username: true, displayName: true } },
+          },
+        },
+      },
     });
 
-    // Get referrals made as referrer
     const asReferrer = await prisma.referral.findMany({
       where: { referrerId: pId },
-      include: { referee: { select: { username: true } } },
+      include: {
+        referee: {
+          include: {
+            user: { select: { username: true, displayName: true } },
+          },
+        },
+      },
     });
 
     return NextResponse.json({
@@ -117,13 +122,13 @@ export async function GET(req: NextRequest) {
         referrer: asReferre
           ? {
               playerId: asReferre.referrerId,
-              username: asReferre.referrer.username,
+              username: asReferre.referrer.user?.username || "Player",
               bonusClaimed: asReferre.bonusClaimed,
             }
           : null,
-        referrals: asReferrer.map((r: typeof asReferrer[number]) => ({
+        referrals: (asReferrer || []).map((r) => ({
           playerId: r.refereeId,
-          username: r.referee.username,
+          username: r.referee.user?.username || "Player",
           bonusClaimed: r.bonusClaimed,
         })),
       },

@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       where: { id: pId },
       data: {
         vipExpiresAt: expiresAt,
-        totalWonUsdm: player.totalWonUsdm.sub(new Decimal(VIP_PASS_PRICE)),
+        totalWonUsdm: new Decimal(player.totalWonUsdm || 0).sub(new Decimal(VIP_PASS_PRICE)),
       },
     });
 

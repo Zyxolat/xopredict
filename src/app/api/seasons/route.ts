@@ -13,7 +13,6 @@ export async function GET(req: NextRequest) {
   try {
     const playerId = req.nextUrl.searchParams.get("playerId");
 
-    // Get active seasons
     const activeSeason = await prisma.season.findFirst({
       where: { isActive: true },
       include: { xp: true },
@@ -25,7 +24,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // If playerId provided, get player's XP
     let playerXP = null;
     if (playerId) {
       const parsed = playerIdSchema.safeParse(playerId);
@@ -41,10 +39,16 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Get leaderboard (top 100 by XP)
     const leaderboard = await prisma.seasonXp.findMany({
       where: { seasonId: activeSeason.id },
-      include: { player: { select: { username: true, rank: true } } },
+      include: {
+        player: {
+          select: {
+            rank: true,
+            user: { select: { username: true, displayName: true } },
+          },
+        },
+      },
       orderBy: { xp: "desc" },
       take: 100,
     });
@@ -58,10 +62,10 @@ export async function GET(req: NextRequest) {
           endDate: activeSeason.endDate,
         },
         playerXP,
-        leaderboard: leaderboard.map((entry: typeof leaderboard[number], idx: number) => ({
+        leaderboard: leaderboard.map((entry, idx) => ({
           rank: idx + 1,
           playerId: entry.playerId,
-          username: entry.player.username,
+          username: entry.player.user?.username || "Player",
           playerRank: entry.player.rank,
           xp: entry.xp,
         })),
@@ -87,13 +91,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Close current active season
     await prisma.season.updateMany({
       where: { isActive: true },
       data: { isActive: false },
     });
 
-    // Create new season
     const now = new Date();
     const endDate = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
