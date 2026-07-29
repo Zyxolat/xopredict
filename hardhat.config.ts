@@ -15,6 +15,10 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
+    },
     "celo-alfajores": {
       url: process.env.CELO_TESTNET_RPC_URL || "https://alfajores-forno.celo-testnet.org",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
