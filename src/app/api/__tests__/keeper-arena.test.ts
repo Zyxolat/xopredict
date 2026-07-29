@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { registerRoundCreatedEvent, registerArenaEvent } from "@/lib/keeper/listener";
-import { processKeeperJob, processArenaJob } from "@/lib/keeper/processor";
+import { registerRoundCreatedEvent } from "@/lib/keeper/listener";
+import { processArenaJob } from "@/lib/keeper/processor";
 import { getStageDescription } from "@/lib/keeper/types";
 
 const mockPrisma = vi.hoisted(() => ({

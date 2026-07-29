@@ -364,9 +364,16 @@ export async function processSoloJob(job: any) {
     });
 
     if (onChainRound.winnerAddress && onChainRound.winnerAddress.startsWith("0x")) {
-      const winningPlayer = await prisma.player.findFirst({
+      let winningPlayer = await prisma.player.findFirst({
         where: { address: { equals: onChainRound.winnerAddress, mode: "insensitive" } },
       });
+      if (!winningPlayer) {
+        const wallet = await prisma.wallet.findUnique({
+          where: { address: onChainRound.winnerAddress.toLowerCase() },
+          include: { user: { include: { player: true } } },
+        });
+        winningPlayer = wallet?.user?.player ?? null;
+      }
       if (winningPlayer) {
         const payoutAmount = (Number(onChainRound.potUsdm) * 1.95) / 1e18;
         await prisma.player.update({
@@ -695,9 +702,16 @@ export async function processArenaJob(job: any) {
     // 3. Idempotently update winning Player totalWonUsdm stats (95% payout)
     if (winnerAddress && winnerAddress.startsWith("0x")) {
       const winnerLower = winnerAddress.toLowerCase();
-      const winningPlayer = await prisma.player.findFirst({
+      let winningPlayer = await prisma.player.findFirst({
         where: { address: { equals: winnerLower, mode: "insensitive" } },
       });
+      if (!winningPlayer) {
+        const wallet = await prisma.wallet.findUnique({
+          where: { address: winnerLower },
+          include: { user: { include: { player: true } } },
+        });
+        winningPlayer = wallet?.user?.player ?? null;
+      }
       if (winningPlayer) {
         const payoutAmount = potUsdmNumber * 0.95;
         await prisma.player.update({
@@ -791,7 +805,7 @@ export async function processKeeperJob(identifierInput: bigint | string) {
     },
   });
 
-  if (lockClaimResult.count === 0) {
+  if (!lockClaimResult || lockClaimResult.count === 0) {
     return { success: false, reason: "Job is locked by another worker or already finalized" };
   }
 
