@@ -3,9 +3,14 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
+
+// ──────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────
 
 enum RoundType {
   arena
@@ -39,6 +44,125 @@ enum KeeperJobStatus {
   COMPLETED
 }
 
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum DbArenaStatus {
+  OPEN
+  FULL
+  PICKING
+  RANDOMNESS_REQUESTED
+  REVEALED
+  SETTLED
+  REFUNDED
+  EXPIRED
+}
+
+// ──────────────────────────────────────────────────────────
+// Auth V2 — Core Identity
+// ──────────────────────────────────────────────────────────
+
+model User {
+  id              String     @id @default(cuid())
+  email           String?    @unique
+  username        String?    @unique
+  displayName     String?
+  passwordHash    String?
+  emailVerified   DateTime?  // NextAuth compat: null = not verified, DateTime = verified at
+  avatarUrl       String?
+  bio             String?
+  role            UserRole   @default(USER)
+  status          UserStatus @default(ACTIVE)
+  isAdmin         Boolean    @default(false)
+  // Legacy fields kept for NextAuth adapter compat
+  name            String?
+  image           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @default(now()) @updatedAt
+
+  // Relations
+  accounts           Account[]
+  sessions           Session[]
+  player             Player?
+  wallets            Wallet[]
+  emailVerifications EmailVerification[]
+  passwordResets     PasswordReset[]
+  loginHistory       LoginHistory[]
+
+  @@map("users")
+}
+
+model Wallet {
+  id         String   @id @default(uuid())
+  userId     String
+  address    String   @unique
+  walletType String   @default("evm")
+  network    String   @default("celo")
+  isPrimary  Boolean  @default(false)
+  verifiedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("wallets")
+}
+
+model EmailVerification {
+  id        String    @id @default(uuid())
+  userId    String
+  otpHash   String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verifications")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String
+  otpHash   String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model LoginHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  ip        String?
+  browser   String?
+  device    String?
+  country   String?
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("login_history")
+}
+
+// ──────────────────────────────────────────────────────────
+// Game Models
+// ──────────────────────────────────────────────────────────
+
 model KeeperJob {
   id            String          @id @default(uuid())
   roundId       BigInt?         @unique
@@ -70,9 +194,7 @@ model Player {
   id                 String          @id @default(uuid())
   userId             String?         @unique
   user               User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  address            String?         @unique
-  email              String?         @unique
-  username           String?         @unique
+  address            String?         @unique // Primary wallet address (kept for keeper backward compat)
   totalWonUsdm       Decimal         @default(0) @db.Decimal(36, 18)
   totalPlayed        Int             @default(0)
   dailyBetTotalUsdm  Decimal         @default(0) @db.Decimal(36, 18)
@@ -82,7 +204,7 @@ model Player {
   isBanned           Boolean         @default(false)
   streakDays         Int             @default(0)
   lastFreePlay       DateTime?
-  vipExpiresAt       DateTime?       // VIP pass expiration; null = not VIP
+  vipExpiresAt       DateTime?
   createdAt          DateTime        @default(now())
   picks              Pick[]
   seasonXp           SeasonXp[]
@@ -175,17 +297,6 @@ model CosmeticOwned {
   @@map("cosmetics_owned")
 }
 
-enum DbArenaStatus {
-  OPEN
-  FULL
-  PICKING
-  RANDOMNESS_REQUESTED
-  REVEALED
-  SETTLED
-  REFUNDED
-  EXPIRED
-}
-
 model Arena {
   id             String        @id @default(uuid())
   arenaId        BigInt        @unique
@@ -196,7 +307,7 @@ model Arena {
   maxPlayers     Int
   currentPlayers Int           @default(1)
   status         DbArenaStatus @default(OPEN)
-  players        String[]      // array of player wallet addresses (lowercased)
+  players        String[]
   roundId        BigInt?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -214,26 +325,16 @@ model PrivateArena {
   betAmount      Decimal  @db.Decimal(36, 18)
   maxPlayers     Int
   currentPlayers Int      @default(1)
-  status         String   @default("active") // active, full, completed
-  playerIds      String[] // array of player UUIDs
+  status         String   @default("active")
+  playerIds      String[]
   createdAt      DateTime @default(now())
-  expiresAt      DateTime // 30 min timeout
+  expiresAt      DateTime
   @@map("private_arenas")
 }
 
-// NextAuth Models
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  isAdmin       Boolean   @default(false)
-  accounts      Account[]
-  sessions      Session[]
-  player        Player?
-  @@map("users")
-}
+// ──────────────────────────────────────────────────────────
+// NextAuth Adapter Models
+// ──────────────────────────────────────────────────────────
 
 model Account {
   id                 String  @id @default(cuid())
