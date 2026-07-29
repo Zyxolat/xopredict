@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { useWalletPersistence } from "@/lib/hooks/useWalletPersistence";
+import { useAccount } from "wagmi";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 interface UserData {
   name: string;
+  username: string;
   email: string;
   walletAddress: string | null;
   avatarColor: string;
@@ -35,13 +36,14 @@ function getAvatarColor(seed: string): string {
 export function UserProfile() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { address: walletAddress } = useWalletPersistence();
+  const { address: walletAddress } = useAccount();
   const [user, setUser] = useState<UserData | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     if (session?.user) {
-      const displayName = session.user.name || "User";
+      const displayName = session.user.displayName || session.user.name || "User";
+      const username = session.user.username || "player";
       const avatarColor = getAvatarColor(displayName);
       const initials = displayName
         .split(" ")
@@ -52,6 +54,7 @@ export function UserProfile() {
 
       setUser({
         name: displayName,
+        username,
         email: session.user.email || "",
         walletAddress: walletAddress || null,
         avatarColor,
@@ -61,8 +64,6 @@ export function UserProfile() {
   }, [session, walletAddress]);
 
   const handleLogout = async () => {
-    localStorage.removeItem("walletAddress");
-    localStorage.removeItem("walletConnectedTime");
     await signOut({ redirect: true, callbackUrl: "/login" });
   };
 
@@ -81,13 +82,7 @@ export function UserProfile() {
         </div>
         <div className="hidden sm:block text-left">
           <p className="text-xs font-semibold text-white">{user.name}</p>
-          <p className="text-xs text-slate-400">
-            {user.walletAddress
-              ? user.walletAddress.slice(0, 6) +
-                "..." +
-                user.walletAddress.slice(-4)
-              : user.email.slice(0, 20)}
-          </p>
+          <p className="text-xs text-slate-400">@{user.username}</p>
         </div>
       </button>
 
