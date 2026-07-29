@@ -1,19 +1,39 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import GoogleProvider from "next-auth/providers/google";
-import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { verifyPassword } from "@/lib/password";
 
 declare module "next-auth" {
   interface User {
     id?: string;
-    address?: string;
+    username?: string;
+    displayName?: string;
+    role?: string;
+    emailVerified?: Date | null;
     playerId?: string;
   }
   interface Session {
-    user?: User & { id?: string; address?: string; playerId?: string };
+    user?: User & {
+      id?: string;
+      username?: string;
+      displayName?: string;
+      role?: string;
+      emailVerified?: Date | null;
+      playerId?: string;
+    };
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id?: string;
+    username?: string;
+    displayName?: string;
+    role?: string;
+    emailVerified?: Date | null;
+    playerId?: string;
   }
 }
 
@@ -23,205 +43,168 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
+    newUser: "/register",
   },
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
+      // Initial sign-in: populate token from user record
       if (user) {
         token.id = user.id;
-        token.address = user.address;
+        token.username = user.username;
+        token.displayName = user.displayName;
+        token.role = user.role;
+        token.emailVerified = user.emailVerified;
         token.playerId = user.playerId;
       }
 
-      // Handle OAuth account linking
-      if (account) {
-        token.provider = account.provider;
+      // Handle session update trigger (e.g., after profile edit)
+      if (trigger === "update" && session) {
+        if (session.username) token.username = session.username;
+        if (session.displayName) token.displayName = session.displayName;
+      }
 
-        // For email/Google signups, try to find or create associated Player
-        if (user?.email && !user.address) {
-          // User signed in via Google or Email, not wallet
-          try {
-            // Check if email already in use by different Player
-            const existingByEmail = await prisma.player.findUnique({
-              where: { email: user.email },
-            });
+      // For Google sign-in: find or create Player, set fields
+      if (account?.provider === "google" && user?.id) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: user.id },
+            include: { player: true },
+          });
 
-            if (existingByEmail && existingByEmail.userId && existingByEmail.userId !== user.id) {
-              // Email already linked to a different User
-              throw new Error(
-                "Email already registered with another account. Please sign in with your original authentication method."
-              );
-            }
-
-            let player = existingByEmail;
-
-            if (!player) {
-              // No Player found by email — check if this User already has one
-              // (e.g. from a prior merge or repeated sign-in)
-              const existingByUserId = await prisma.player.findUnique({
-                where: { userId: user.id },
+          if (dbUser) {
+            // Set username from email prefix if not already set
+            if (!dbUser.username && dbUser.email) {
+              const prefix = dbUser.email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 20);
+              // Check uniqueness
+              const existing = await prisma.user.findFirst({
+                where: { username: { equals: prefix, mode: "insensitive" } },
               });
-
-              if (existingByUserId) {
-                // Reuse the existing Player; update email if not yet set
-                player = existingByUserId.email
-                  ? existingByUserId
-                  : await prisma.player.update({
-                      where: { id: existingByUserId.id },
-                      data: { email: user.email },
-                    });
-              } else {
-                // Genuinely new Google/Email signup — create Player
-                player = await prisma.player.create({
-                  data: {
-                    address: null, // Google-first users start with null address
-                    email: user.email,
-                    userId: user.id,
-                  },
+              if (!existing) {
+                await prisma.user.update({
+                  where: { id: dbUser.id },
+                  data: { username: prefix, displayName: dbUser.name || prefix },
                 });
+                token.username = prefix;
+                token.displayName = dbUser.name || prefix;
               }
-            } else if (!player.userId) {
-              // Wallet-first user adding Google email
-              player = await prisma.player.update({
-                where: { id: player.id },
-                data: {
-                  email: user.email,
-                  userId: user.id,
-                },
-              });
+            } else {
+              token.username = dbUser.username || undefined;
+              token.displayName = dbUser.displayName || undefined;
             }
 
-            token.address = player.address; // May be null for Google-first
-            token.playerId = player.id;
-            token.id = user.id;
-          } catch (error) {
-            if (error instanceof Prisma.PrismaClientKnownRequestError) {
-              if (error.code === "P2002") {
-                // Unique constraint violation
-                console.error("Email unique constraint violation:", error);
-                throw new Error(
-                  "This email is already registered. Please use your original sign-in method."
-                );
-              }
+            token.role = dbUser.role;
+            token.emailVerified = dbUser.emailVerified;
+
+            // Create Player record if not exists
+            let player = dbUser.player;
+            if (!player) {
+              player = await prisma.player.create({
+                data: { userId: dbUser.id },
+              });
             }
-            throw error;
+            token.playerId = player.id;
           }
+        } catch (error) {
+          console.error("JWT callback Google error:", error);
         }
       }
 
       return token;
     },
+
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.address = token.address as string;
+        session.user.username = token.username as string;
+        session.user.displayName = token.displayName as string;
+        session.user.role = token.role as string;
+        session.user.emailVerified = token.emailVerified as Date | null;
         session.user.playerId = token.playerId as string;
       }
       return session;
     },
+
     async redirect({ url, baseUrl }) {
-      // Redirect to home page or dashboard after sign in
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       else if (new URL(url).origin === baseUrl) return url;
       return baseUrl;
     },
   },
+
   providers: [
+    // Email + Password authentication
     CredentialsProvider({
-      name: "Wallet",
+      id: "credentials",
+      name: "Email & Password",
       credentials: {
-        address: { label: "Address", type: "text" },
-        message: { label: "Message", type: "text" },
-        signature: { label: "Signature", type: "text" },
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.address || !credentials?.message || !credentials?.signature) {
-          throw new Error("Missing wallet credentials");
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Email and password are required");
         }
 
-        try {
-          const response = await fetch(`${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/auth/wallet`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              address: credentials.address,
-              message: credentials.message,
-              signature: credentials.signature,
-            }),
-          });
+        const email = credentials.email.toLowerCase().trim();
+        const user = await prisma.user.findUnique({
+          where: { email },
+          include: { player: true },
+        });
 
-          if (!response.ok) {
-            throw new Error("Wallet verification failed");
-          }
-
-          const { data: player } = await response.json();
-          const walletEmail = player.address.toLowerCase();
-
-          // Ensure User record exists for NextAuth linking
-          const user = await prisma.user.upsert({
-            where: { email: walletEmail },
-            create: {
-              email: walletEmail,
-              name: player.address?.slice(0, 6) + "..." + player.address?.slice(-4),
-            },
-            update: {
-              name: player.address?.slice(0, 6) + "..." + player.address?.slice(-4),
-            },
-          });
-
-          // Create Account record linking wallet provider to User
-          await prisma.account.upsert({
-            where: {
-              provider_providerAccountId: {
-                provider: "wallet",
-                providerAccountId: player.address.toLowerCase(),
-              },
-            },
-            create: {
-              userId: user.id,
-              type: "credentials",
-              provider: "wallet",
-              providerAccountId: player.address.toLowerCase(),
-            },
-            update: {
-              userId: user.id,
-            },
-          });
-
-          return {
-            id: user.id,
-            email: walletEmail,
-            address: player.address,
-            playerId: player.id,
-            name: player.address?.slice(0, 6) + "..." + player.address?.slice(-4),
-          };
-        } catch (error) {
-          console.error("Wallet auth error:", error);
-          return null;
+        if (!user) {
+          throw new Error("Invalid email or password");
         }
+
+        if (user.status === "BANNED") {
+          throw new Error("This account has been suspended");
+        }
+
+        if (user.status === "SUSPENDED") {
+          throw new Error("This account is temporarily suspended");
+        }
+
+        if (!user.passwordHash) {
+          throw new Error("Please sign in with Google or set a password first");
+        }
+
+        const valid = await verifyPassword(credentials.password, user.passwordHash);
+        if (!valid) {
+          // Record failed login attempt
+          await prisma.loginHistory.create({
+            data: { userId: user.id, success: false },
+          }).catch(() => {});
+
+          throw new Error("Invalid email or password");
+        }
+
+        if (!user.emailVerified) {
+          throw new Error("Please verify your email before signing in");
+        }
+
+        // Record successful login
+        await prisma.loginHistory.create({
+          data: { userId: user.id, success: true },
+        }).catch(() => {});
+
+        return {
+          id: user.id,
+          email: user.email,
+          username: user.username || undefined,
+          displayName: user.displayName || undefined,
+          role: user.role,
+          emailVerified: user.emailVerified,
+          playerId: user.player?.id,
+        };
       },
     }),
+
+    // Google OAuth (optional)
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
       ? [
           GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             allowDangerousEmailAccountLinking: true,
-          }),
-        ]
-      : []),
-    ...(process.env.RESEND_API_KEY
-      ? [
-          // Email provider using Resend (optional)
-          // To enable: set RESEND_API_KEY in .env.local
-          // import { ResendProvider } from "next-auth/providers/resend";
-          // ResendProvider({ apiKey: process.env.RESEND_API_KEY })
-        ]
-      : []),
-    ...(process.env.EMAIL_SERVER && process.env.EMAIL_FROM
-      ? [
-          EmailProvider({
-            server: process.env.EMAIL_SERVER,
-            from: process.env.EMAIL_FROM,
           }),
         ]
       : []),

@@ -6,7 +6,8 @@
  *
  * requireSession() – any authenticated user
  * requireSelf(playerId) – authenticated user whose player.id === playerId
- * requireAdmin() – authenticated user whose user.isAdmin === true
+ * requireAdmin() – authenticated user whose user.role === 'ADMIN' or user.isAdmin === true
+ * requireEmailVerified() – authenticated user whose email is verified
  */
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
@@ -17,8 +18,21 @@ import { prisma } from "@/lib/prisma";
 // Shared types
 // ------------------------------------------------------------------
 
-export type SessionUser = { id: string; isAdmin: boolean };
-export type SessionPlayer = { id: string; address: string | null; isBanned: boolean };
+export type SessionUser = {
+  id: string;
+  email: string | null;
+  username: string | null;
+  displayName: string | null;
+  role: string;
+  isAdmin: boolean;
+  emailVerified: Date | null;
+};
+
+export type SessionPlayer = {
+  id: string;
+  address: string | null;
+  isBanned: boolean;
+};
 
 export type AuthOk = {
   ok: true;
@@ -41,7 +55,7 @@ export type AuthResult = AuthOk | AuthFail;
  * Verifies there is a valid NextAuth JWT session and that the referenced
  * User record still exists in the database.
  *
- * Returns 401 if no session or user deleted.
+ * Returns 401 if no session or user deleted/banned.
  */
 export async function requireSession(): Promise<AuthResult> {
   const session = await getServerSession(authOptions);
@@ -55,14 +69,25 @@ export async function requireSession(): Promise<AuthResult> {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, isAdmin: true },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      displayName: true,
+      role: true,
+      isAdmin: true,
+      status: true,
+      emailVerified: true,
+    },
   });
 
-  if (!user) {
-    // Session token valid but user was deleted from DB
+  if (!user || user.status === "BANNED" || user.status === "SUSPENDED") {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      response: NextResponse.json(
+        { error: user?.status === "BANNED" ? "Account banned" : "Unauthorized" },
+        { status: 401 }
+      ),
     };
   }
 
@@ -71,24 +96,49 @@ export async function requireSession(): Promise<AuthResult> {
     select: { id: true, address: true, isBanned: true },
   });
 
-  return { ok: true, user, player };
+  return {
+    ok: true,
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role,
+      isAdmin: user.isAdmin || user.role === "ADMIN",
+      emailVerified: user.emailVerified,
+    },
+    player,
+  };
+}
+
+// ------------------------------------------------------------------
+// requireEmailVerified
+// ------------------------------------------------------------------
+
+/**
+ * Verifies the user has a verified email address.
+ */
+export async function requireEmailVerified(): Promise<AuthResult> {
+  const base = await requireSession();
+  if (!base.ok) return base;
+
+  if (!base.user.emailVerified) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Email verification required" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return base;
 }
 
 // ------------------------------------------------------------------
 // requireSelf
 // ------------------------------------------------------------------
 
-/**
- * Verifies the authenticated player's ID matches `playerId`.
- *
- * Returns 401 if no session, 403 if the player ID does not match the
- * session's linked player.
- *
- * Use this for GET query-param routes where the playerId is available
- * before reading a request body.  For POST routes with the playerId in
- * the body, call requireSession() first and then call assertSelf() after
- * parsing the body so the body stream is not consumed twice.
- */
 export async function requireSelf(playerId: string): Promise<AuthResult> {
   const base = await requireSession();
   if (!base.ok) return base;
@@ -117,18 +167,6 @@ export async function requireSelf(playerId: string): Promise<AuthResult> {
 // assertSelf  (synchronous, for use after body parsing)
 // ------------------------------------------------------------------
 
-/**
- * Synchronous check used in POST routes after the body has already been
- * parsed.  Returns an AuthFail response object if the player IDs do not
- * match, or null if they do.
- *
- * Typical pattern:
- *   const auth = await requireSession();
- *   if (!auth.ok) return auth.response;
- *   const body = schema.parse(await req.json());
- *   const fail = assertSelf(auth, body.playerId);
- *   if (fail) return fail.response;
- */
 export function assertSelf(auth: AuthOk, playerId: string): AuthFail | null {
   if (!auth.player || auth.player.id !== playerId) {
     return {
@@ -144,7 +182,7 @@ export function assertSelf(auth: AuthOk, playerId: string): AuthFail | null {
 // ------------------------------------------------------------------
 
 /**
- * Verifies the authenticated user has isAdmin === true.
+ * Verifies the authenticated user has role === 'ADMIN' or isAdmin === true.
  *
  * Returns 401 if no session, 403 if authenticated but not an admin.
  */
@@ -152,7 +190,7 @@ export async function requireAdmin(): Promise<AuthResult> {
   const base = await requireSession();
   if (!base.ok) return base;
 
-  if (!base.user.isAdmin) {
+  if (!base.user.isAdmin && base.user.role !== "ADMIN") {
     return {
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
