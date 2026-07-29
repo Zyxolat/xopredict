@@ -27,29 +27,30 @@ const rowVariants = {
   },
 };
 
-interface Round {
+interface DbRound {
   id: string;
-  type: "Arena" | "Solo";
-  result: string;
-  status: "Won" | "Lost";
+  roundId: string | number;
+  type: string;
+  potUsdm: string | number | null;
+  winnerAddress: string | null;
+  status: string;
+  createdAt: string;
 }
 
 export default function HistoryPage() {
   const { data: session } = useSession();
-  const [rounds, setRounds] = useState<Round[]>([]);
+  const [rounds, setRounds] = useState<DbRound[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!session?.user?.id) return;
-
     const fetchHistory = async () => {
       try {
-        const mockRounds: Round[] = [
-          { id: "842", type: "Arena", result: "+42.75", status: "Won" },
-          { id: "841", type: "Solo", result: "-10.00", status: "Lost" },
-          { id: "840", type: "Arena", result: "+18.50", status: "Won" },
-        ];
-        setRounds(mockRounds);
+        setLoading(true);
+        const res = await fetch("/api/rounds");
+        if (res.ok) {
+          const json = await res.json();
+          setRounds(json.data || []);
+        }
       } catch (error) {
         console.error("Failed to fetch history:", error);
       } finally {
@@ -57,7 +58,7 @@ export default function HistoryPage() {
       }
     };
 
-    fetchHistory();
+    void fetchHistory();
   }, [session?.user?.id]);
 
   if (loading) {
@@ -107,20 +108,20 @@ export default function HistoryPage() {
                 className="grid grid-cols-4 items-center border-t border-white/10 p-4 text-sm hover:bg-white/[.02] transition"
                 variants={rowVariants}
               >
-                <span>#{round.id}</span>
-                <span>{round.type}</span>
+                <span className="font-mono text-[#d5a7ff]">#{round.roundId?.toString() || round.id.slice(0, 6)}</span>
+                <span className="uppercase font-mono text-xs">{round.type}</span>
                 <span
                   className={
-                    round.status === "Won" ? "text-[#4ce47d]" : "text-red-300"
+                    round.status === "settled" || round.status === "REVEALED" ? "text-[#4ce47d]" : "text-yellow-300"
                   }
                 >
-                  {round.result} USDm
+                  {round.potUsdm ? `${round.potUsdm} USDm` : round.status}
                 </span>
                 <Link
-                  className="font-mono text-xs text-[#d5a7ff] hover:text-[#e7dce9] transition"
+                  className="font-mono text-xs text-[#d5a7ff] underline hover:text-white transition"
                   href={`/verify?round=${round.id}`}
                 >
-                  OPEN
+                  VERIFY →
                 </Link>
               </motion.div>
             ))}

@@ -15,6 +15,7 @@ import { xolatAbi } from "@/lib/contracts";
 import { useUsdmBalance } from "@/lib/hooks/useUsdmBalance";
 import { useStartSoloGame } from "@/lib/hooks/useStartSoloGame";
 import { usePickSoloCard } from "@/lib/hooks/usePickSoloCard";
+import { ShareWin } from "@/components/share-win";
 
 export default function SoloPage() {
   const { data: session } = useSession();
@@ -243,11 +244,21 @@ export default function SoloPage() {
     },
   };
 
+  if (!session?.user) {
+    return (
+      <AppShell title="Solo Prediction">
+        <section className="mx-auto max-w-2xl px-5 pt-8 text-center">
+          <EmptyState message="Please sign in to play Solo Predictions!" />
+        </section>
+      </AppShell>
+    );
+  }
+
   if (!isConnected) {
     return (
       <AppShell title="Solo Prediction">
-        <section className="mx-auto max-w-2xl px-5 pt-8">
-          <EmptyState message="Connect your wallet to play!" />
+        <section className="mx-auto max-w-2xl px-5 pt-8 text-center">
+          <EmptyState message="Connect & Link your EVM wallet to play!" />
         </section>
       </AppShell>
     );
@@ -515,6 +526,15 @@ export default function SoloPage() {
                       Settle Tx ↗
                     </a>
                   )}
+                </div>
+              )}
+
+              {keeperStatus === "COMPLETED" && (
+                <div className="mt-6 border-t border-white/10 pt-4">
+                  <ShareWin
+                    amount={Number(bet || "1") * 1.95}
+                    roundId={activeGameId?.toString() || "1"}
+                  />
                 </div>
               )}
             </motion.div>

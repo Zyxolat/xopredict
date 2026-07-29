@@ -13,6 +13,7 @@ import { useArenaStatus } from "@/lib/hooks/useArenaStatus";
 import { useArenaPolling } from "@/lib/hooks/useArenaPolling";
 import { useJoinArena } from "@/lib/hooks/useJoinArena";
 import { usePickArenaCard } from "@/lib/hooks/usePickArenaCard";
+import { ShareWin } from "@/components/share-win";
 import { Trophy, Users, ShieldAlert, Sparkles, ArrowLeft, RefreshCw, Clock } from "lucide-react";
 
 export default function ArenaPage({ params }: { params: { id: string } }) {
@@ -258,6 +259,12 @@ export default function ArenaPage({ params }: { params: { id: string } }) {
             <p className="mt-2 font-mono text-sm text-[#d5a7ff]">
               WINNER: {winner ? `${winner.slice(0, 6)}...${winner.slice(-4)}` : "PROTOCOL OWNER"}
             </p>
+            <div className="mt-6 max-w-md mx-auto">
+              <ShareWin
+                amount={Number(arena?.betAmount || 10) * (arena?.currentPlayers || 2)}
+                roundId={params.id}
+              />
+            </div>
             <div className="mt-6 flex justify-center gap-4">
               <Link
                 href="/arena"

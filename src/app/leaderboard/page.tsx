@@ -27,8 +27,9 @@ const itemVariants = {
 
 interface LeaderboardEntry {
   position: number;
-  address: string;
-  username: string | null;
+  id: string;
+  username: string;
+  displayName: string;
   totalWonUsdm: number;
   rank: string;
   totalPlayed: number;
@@ -45,7 +46,7 @@ export default function LeaderboardPage() {
         setLoading(true);
         const res = await fetch("/api/leaderboard?type=overall&limit=100");
         if (!res.ok) throw new Error("Failed to fetch leaderboard");
-        
+
         const json = await res.json();
         setPlayers(json.data.leaderboard);
       } catch (err) {
@@ -99,7 +100,7 @@ export default function LeaderboardPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
         >
-          SEASON 01 • 18 DAYS REMAINING
+          SEASON 01 • GLOBAL RANKINGS
         </motion.p>
 
         <motion.div
@@ -110,7 +111,7 @@ export default function LeaderboardPage() {
         >
           {players.map((player) => (
             <motion.article
-              key={player.address}
+              key={player.id}
               className="flex items-center gap-5 rounded-2xl border border-white/15 bg-white/[.025] p-5 hover:bg-white/[.04] transition"
               variants={itemVariants}
               whileHover={{ x: 4 }}
@@ -118,16 +119,18 @@ export default function LeaderboardPage() {
               <b className="text-2xl text-[#d5a7ff] w-12 text-center">
                 {String(player.position).padStart(2, "0")}
               </b>
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-[#d5a7ff]/15">
-                ◉
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-[#d5a7ff]/15 font-bold text-[#d5a7ff]">
+                {player.displayName.charAt(0).toUpperCase()}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="font-bold truncate">
-                  {player.username || player.address.slice(0, 6) + "..." + player.address.slice(-4)}
+                <p className="font-bold truncate text-white">
+                  {player.displayName}
                 </p>
-                <p className="text-xs text-[#8d739c]">{player.rank}</p>
+                <p className="text-xs text-[#8d739c] font-mono">
+                  @{player.username} • {player.rank}
+                </p>
               </div>
-              <span className="font-mono text-[#4ce47d] text-right">
+              <span className="font-mono text-[#4ce47d] text-right font-bold">
                 {player.totalWonUsdm.toFixed(2)} USDm
               </span>
             </motion.article>
