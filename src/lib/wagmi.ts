@@ -2,10 +2,10 @@ import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { celo } from "wagmi/chains";
 
-const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "c4f79cc821944d9680842e34466bfb00";
 
-if (!projectId) {
-  throw new Error("NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is required to use Reown AppKit");
+if (!process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID) {
+  console.warn("NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is missing in env, using fallback ID.");
 }
 
 const wagmiAdapter = new WagmiAdapter({
