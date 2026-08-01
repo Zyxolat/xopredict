@@ -102,17 +102,24 @@ export async function POST(request: Request) {
       },
     });
 
-    // Send verification email via Resend
+    // Send verification email via Resend — failure returns 500, not 201
     try {
       await sendVerificationOTP(user.email!, otp);
+      console.log(`[Register API] Verification email sent to ${user.email}`);
     } catch (emailErr) {
-      console.error("[Register API] Error sending verification email:", emailErr);
-      // We don't fail registration if email send fails in dev, but log it
+      console.error("[Register API] CRITICAL: Failed to send verification email:", emailErr);
+      // Roll back the OTP row so the user can retry cleanly
+      await prisma.emailVerification.deleteMany({ where: { userId: user.id } });
+      return NextResponse.json(
+        { error: "Account created but verification email failed to send. Please try again." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json(
       {
         message: "Account created successfully. Please check your email for the verification code.",
+        emailSent: true,
         data: {
           userId: user.id,
           email: user.email,

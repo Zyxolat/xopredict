@@ -160,7 +160,17 @@ export async function PUT(request: Request) {
       },
     });
 
-    await sendVerificationOTP(user.email!, otp);
+    try {
+      await sendVerificationOTP(user.email!, otp);
+      console.log(`[Resend OTP API] Verification email sent to ${user.email}`);
+    } catch (emailErr) {
+      console.error("[Resend OTP API] CRITICAL: Failed to send verification email:", emailErr);
+      await prisma.emailVerification.deleteMany({ where: { userId: user.id, usedAt: null, createdAt: { gte: new Date(Date.now() - 5000) } } });
+      return NextResponse.json(
+        { error: "Failed to send verification code. Please try again." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       message: "Verification code sent to your email.",

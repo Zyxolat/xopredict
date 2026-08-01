@@ -1,7 +1,13 @@
 import { Resend } from "resend";
 
-function getResendClient() {
-  const apiKey = process.env.RESEND_API_KEY || "re_dummy_key_for_build";
+function getResendClient(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "[email] RESEND_API_KEY environment variable is not set. " +
+      "Email sending is disabled. Set RESEND_API_KEY in your .env.local file."
+    );
+  }
   return new Resend(apiKey);
 }
 
@@ -15,10 +21,13 @@ export async function sendVerificationOTP(
   otp: string
 ): Promise<void> {
   const resend = getResendClient();
-  await resend.emails.send({
+  const subject = "Verify your XOLAT account";
+  const start = Date.now();
+  console.log(`[email] SEND recipient=${email} subject="${subject}" provider=resend`);
+  const result = await resend.emails.send({
     from: FROM_EMAIL,
     to: email,
-    subject: "Verify your XOLAT account",
+    subject,
     html: `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #0b0a0d; color: #f4eef8; border-radius: 16px;">
         <h1 style="color: #d5a7ff; font-size: 28px; margin: 0 0 8px;">⬡ XOLAT</h1>
@@ -33,7 +42,14 @@ export async function sendVerificationOTP(
       </div>
     `,
   });
+  const duration = Date.now() - start;
+  if (result.error) {
+    console.error(`[email] FAIL recipient=${email} subject="${subject}" provider=resend duration=${duration}ms status=${result.error.name} error="${result.error.message}"`);
+    throw new Error(`Resend error: ${result.error.message}`);
+  }
+  console.log(`[email] OK recipient=${email} subject="${subject}" provider=resend messageId=${result.data?.id} duration=${duration}ms`);
 }
+
 
 /**
  * Send a 6-digit OTP for password reset.
