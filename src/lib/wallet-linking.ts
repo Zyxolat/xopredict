@@ -37,14 +37,6 @@ export async function linkWalletToUser(userId: string, address: string) {
       throw new WalletLinkConflictError("This wallet is already linked to another account.");
     }
 
-    // 3. Check legacy Player.address uniqueness
-    const legacyPlayer = await tx.player.findUnique({
-      where: { address: walletAddress },
-    });
-    if (legacyPlayer && legacyPlayer.userId && legacyPlayer.userId !== userId) {
-      throw new WalletLinkConflictError("This wallet is already linked to another account.");
-    }
-
     // 4. Create Wallet record
     const isFirstWallet = user.wallets.length === 0;
     const wallet = await tx.wallet.create({
