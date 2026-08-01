@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { verifyMessage } from "viem";
 import { requireSession } from "@/lib/api-auth";
-import { linkWalletToUser } from "@/lib/wallet-linking";
+import { linkWalletToUser, WalletLinkConflictError } from "@/lib/wallet-linking";
 import { sendWalletLinkedNotification } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +93,7 @@ export async function POST(request: Request) {
     try {
       const wallet = await linkWalletToUser(auth.user.id, walletAddress);
 
+      // Only send notification if this is a fresh link (not idempotent same-user reconnect)
       if (auth.user.email) {
         try {
           await sendWalletLinkedNotification(auth.user.email, walletAddress);
@@ -106,10 +107,10 @@ export async function POST(request: Request) {
         data: wallet,
       });
     } catch (linkError: unknown) {
-      const message = linkError instanceof Error ? linkError.message : String(linkError);
-      if (message.includes("already linked")) {
+      // Only reject with 409 if wallet belongs to a DIFFERENT user
+      if (linkError instanceof WalletLinkConflictError) {
         return NextResponse.json(
-          { error: "This wallet is already linked to another account." },
+          { error: linkError.message },
           { status: 409 }
         );
       }
