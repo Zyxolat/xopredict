@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { verifyMessage } from "viem";
 import { requireSession } from "@/lib/api-auth";
-import { linkWalletToUser } from "@/lib/wallet-linking";
+import { linkWalletToUser, WalletLinkConflictError } from "@/lib/wallet-linking";
 import { sendWalletLinkedNotification } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
@@ -59,10 +59,9 @@ export async function POST(request: Request) {
         data: wallet,
       });
     } catch (linkErr: unknown) {
-      const msg = linkErr instanceof Error ? linkErr.message : String(linkErr);
-      if (msg.includes("already linked")) {
+      if (linkErr instanceof WalletLinkConflictError) {
         return NextResponse.json(
-          { error: "This wallet is already linked to another account." },
+          { error: linkErr.message },
           { status: 409 }
         );
       }
