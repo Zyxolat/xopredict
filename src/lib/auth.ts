@@ -180,7 +180,13 @@ export const authOptions: NextAuthOptions = {
           GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            allowDangerousEmailAccountLinking: true,
+            // SECURITY: do NOT enable allowDangerousEmailAccountLinking.
+            // Doing so would silently attach a Google identity to any
+            // pre-existing (possibly attacker-created, unverified) User row
+            // sharing the same email address, letting whoever set that
+            // row's password log in as the real Google-account owner.
+            // NextAuth's safe default (false) instead throws
+            // OAuthAccountNotLinked when emails collide across providers.
           }),
         ]
       : []),
