@@ -76,9 +76,9 @@ export default function ProfilePage() {
     }
   }, [session]);
 
-  const username = profile?.username || session?.user?.username || "Player";
-  const displayName = profile?.displayName || session?.user?.displayName || username;
-  const isEmailVerified = !!profile?.emailVerified || !!session?.user?.emailVerified;
+  const username = profile?.username || "Player";
+  const displayName = profile?.displayName || username;
+  const isEmailVerified = !!profile?.emailVerified;
   const xp = profile?.player?.seasonXp?.[0]?.xp || 0;
   const rank = profile?.player?.rank || "Bronze";
   const memberSince = profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : "2026";
