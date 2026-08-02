@@ -78,6 +78,7 @@ export async function requireSession(): Promise<AuthResult> {
       isAdmin: true,
       status: true,
       emailVerified: true,
+      passwordChangedAt: true,
     },
   });
 
@@ -86,6 +87,24 @@ export async function requireSession(): Promise<AuthResult> {
       ok: false,
       response: NextResponse.json(
         { error: user?.status === "BANNED" ? "Account banned" : "Unauthorized" },
+        { status: 401 }
+      ),
+    };
+  }
+
+  // Reject JWTs issued before the user's last password change so that
+  // password-change/reset actually invalidates previously issued sessions
+  // (NextAuth's JWT strategy is stateless, so this stamp check is the real
+  // invalidation mechanism — deleting Session rows has no effect on it).
+  if (
+    user.passwordChangedAt &&
+    typeof session.iat === "number" &&
+    session.iat * 1000 < user.passwordChangedAt.getTime()
+  ) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Session expired due to a password change. Please sign in again." },
         { status: 401 }
       ),
     };

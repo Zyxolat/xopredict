@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword, validatePasswordStrength } from "@/lib/password";
 import { generateOTP, hashOTP, OTP_EXPIRY_MS } from "@/lib/otp";
 import { sendVerificationOTP } from "@/lib/email";
+import { checkRateLimit, rateLimitExceededResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,12 @@ const registerSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const rateLimit = checkRateLimit(`register:${ip}`, { limit: 5, windowMs: 60 * 60 * 1000 });
+    if (!rateLimit.success) {
+      return rateLimitExceededResponse(rateLimit.reset);
+    }
+
     const body = await request.json();
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {

@@ -5,6 +5,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/password";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 declare module "next-auth" {
   interface User {
@@ -26,6 +27,8 @@ declare module "next-auth" {
       isAdmin?: boolean;
       playerId?: string;
     };
+    /** Unix timestamp (seconds) the underlying JWT was issued at — used to detect stale tokens after a password change. */
+    iat?: number;
   }
 }
 
@@ -108,6 +111,7 @@ export const authOptions: NextAuthOptions = {
         session.user.emailVerified = token.emailVerified as string | Date | null | undefined;
         session.user.playerId = token.playerId as string | undefined;
       }
+      session.iat = typeof token.iat === "number" ? token.iat : undefined;
       return session;
     },
     async redirect({ url, baseUrl }) {
@@ -131,6 +135,12 @@ export const authOptions: NextAuthOptions = {
         }
 
         const email = credentials.email.toLowerCase().trim();
+
+        const rateLimit = checkRateLimit(`login:${email}`, { limit: 10, windowMs: 15 * 60 * 1000 });
+        if (!rateLimit.success) {
+          throw new Error("Too many login attempts. Please try again in a few minutes.");
+        }
+
         const user = await prisma.user.findUnique({ where: { email } });
 
         if (!user || !user.passwordHash) {

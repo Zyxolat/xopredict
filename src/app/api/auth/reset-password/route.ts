@@ -95,9 +95,10 @@ export async function POST(request: Request) {
       }),
       prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash: newPasswordHash },
+        data: { passwordHash: newPasswordHash, passwordChangedAt: now },
       }),
-      // Invalidate existing sessions
+      // Invalidate existing sessions (Session rows; JWTs are actually
+      // invalidated via the passwordChangedAt stamp checked in requireSession)
       prisma.session.deleteMany({
         where: { userId: user.id },
       }),
