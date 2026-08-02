@@ -32,10 +32,35 @@ export async function linkWalletToUser(userId: string, address: string) {
 
     if (existingWallet) {
       if (existingWallet.userId === userId) {
-        return existingWallet; // Already linked to this user
+        return existingWallet; // Already linked to this user (idempotent reconnect)
       }
       throw new WalletLinkConflictError("This wallet is already linked to another account.");
     }
+
+    // 3. Check if wallet is associated with another user in legacy Player.address
+    const existingPlayer = await tx.player.findUnique({
+      where: { address: walletAddress },
+      include: { user: true },
+    });
+
+    if (existingPlayer && existingPlayer.userId !== userId) {
+      // If that other user has a verified email or active account, reject
+      if (existingPlayer.user && existingPlayer.user.emailVerified) {
+        throw new WalletLinkConflictError("This wallet is already linked to another account.");
+      }
+
+      // Otherwise, clear legacy address on unverified dummy record so real user can claim it
+      await tx.player.update({
+        where: { id: existingPlayer.id },
+        data: { address: null },
+      });
+    }
+
+    // Clear any leftover Player.address assignment for this address on other players
+    await tx.player.updateMany({
+      where: { address: walletAddress, NOT: { userId } },
+      data: { address: null },
+    });
 
     // 4. Create Wallet record
     const isFirstWallet = user.wallets.length === 0;
@@ -59,7 +84,7 @@ export async function linkWalletToUser(userId: string, address: string) {
     }
 
     return wallet;
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 }
 
 /**
@@ -81,36 +106,40 @@ export async function removeWalletFromUser(userId: string, address: string) {
       where: { id: wallet.id },
     });
 
-    // If removed wallet was primary, assign new primary if any remaining
-    if (wallet.isPrimary) {
-      const nextWallet = await tx.wallet.findFirst({
-        where: { userId },
-        orderBy: { createdAt: "asc" },
-      });
+    // Re-evaluate remaining user wallets
+    const remainingWallets = await tx.wallet.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+    });
 
-      const player = await tx.player.findUnique({ where: { userId } });
+    const player = await tx.player.findUnique({ where: { userId } });
 
-      if (nextWallet) {
-        await tx.wallet.update({
-          where: { id: nextWallet.id },
+    if (remainingWallets.length > 0) {
+      const hasPrimary = remainingWallets.some((w) => w.isPrimary);
+      let primaryWallet = remainingWallets.find((w) => w.isPrimary);
+
+      if (!hasPrimary) {
+        primaryWallet = await tx.wallet.update({
+          where: { id: remainingWallets[0].id },
           data: { isPrimary: true },
         });
-        if (player) {
-          await tx.player.update({
-            where: { id: player.id },
-            data: { address: nextWallet.address },
-          });
-        }
-      } else if (player) {
+      }
+
+      if (player) {
         await tx.player.update({
           where: { id: player.id },
-          data: { address: null },
+          data: { address: primaryWallet?.address || remainingWallets[0].address },
         });
       }
+    } else if (player) {
+      await tx.player.update({
+        where: { id: player.id },
+        data: { address: null },
+      });
     }
 
     return true;
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 }
 
 /**
