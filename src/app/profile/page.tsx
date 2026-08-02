@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
 import { VIPPass } from "@/components/vip-pass";
 import { CosmeticsShop } from "@/components/cosmetics-shop";
+import { ErrorState } from "@/components/state-displays";
 import { Wallet, Calendar, CheckCircle2 } from "lucide-react";
 
 interface UserProfileData {
@@ -51,19 +52,23 @@ export default function ProfilePage() {
   const { data: session } = useSession();
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "vip" | "cosmetics">("overview");
 
   useEffect(() => {
     const fetchProfile = async () => {
       setLoading(true);
+      setError(null);
       try {
         const res = await fetch("/api/players/me");
-        if (res.ok) {
-          const json = await res.json();
-          setProfile(json.data);
+        if (!res.ok) {
+          throw new Error(`Failed to load profile (status ${res.status})`);
         }
+        const json = await res.json();
+        setProfile(json.data);
       } catch (err) {
         console.error("Profile fetch error:", err);
+        setError(err instanceof Error ? err.message : "Failed to load profile");
       } finally {
         setLoading(false);
       }
@@ -91,6 +96,8 @@ export default function ProfilePage() {
         initial="hidden"
         animate="visible"
       >
+        {error && !loading && <ErrorState message={error} />}
+
         {/* Header Profile Card */}
         <motion.div
           className="rounded-3xl border border-white/15 bg-gradient-to-br from-[#1c1429] via-[#0d0914] to-black p-8 shadow-2xl"

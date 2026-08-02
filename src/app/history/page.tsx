@@ -4,7 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { useSession } from "next-auth/react";
 import { AppShell } from "@/components/app-shell";
-import { LoadingState, EmptyState } from "@/components/state-displays";
+import { LoadingState, EmptyState, ErrorState } from "@/components/state-displays";
 import { useEffect, useState } from "react";
 
 const containerVariants = {
@@ -41,18 +41,22 @@ export default function HistoryPage() {
   const { data: session } = useSession();
   const [rounds, setRounds] = useState<DbRound[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
         setLoading(true);
+        setError(null);
         const res = await fetch("/api/rounds");
-        if (res.ok) {
-          const json = await res.json();
-          setRounds(json.data || []);
+        if (!res.ok) {
+          throw new Error(`Failed to load history (status ${res.status})`);
         }
-      } catch (error) {
-        console.error("Failed to fetch history:", error);
+        const json = await res.json();
+        setRounds(json.data || []);
+      } catch (err) {
+        console.error("Failed to fetch history:", err);
+        setError(err instanceof Error ? err.message : "Failed to load history");
       } finally {
         setLoading(false);
       }
@@ -66,6 +70,16 @@ export default function HistoryPage() {
       <AppShell title="Round History">
         <section className="mx-auto max-w-3xl px-5 pt-7">
           <LoadingState />
+        </section>
+      </AppShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppShell title="Round History">
+        <section className="mx-auto max-w-3xl px-5 pt-7">
+          <ErrorState message={error} />
         </section>
       </AppShell>
     );

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useAccount } from "wagmi";
 import { parseUnits } from "viem";
 import { AppShell } from "@/components/app-shell";
+import { ErrorState } from "@/components/state-displays";
 import { useAdminActions } from "@/lib/hooks/useAdminActions";
 import { xolatAddress } from "@/lib/contracts";
 
@@ -53,6 +54,7 @@ function statusMessage(activeCall: string | null, status: string): string | null
 export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const { isConnected } = useAccount();
 
   const [arenaIdInput, setArenaIdInput] = useState("");
@@ -65,14 +67,17 @@ export default function AdminPage() {
   useEffect(() => {
     const fetchAdminStats = async () => {
       setLoading(true);
+      setStatsError(null);
       try {
         const res = await fetch("/api/admin");
-        if (res.ok) {
-          const json = await res.json();
-          setStats(json.data);
+        if (!res.ok) {
+          throw new Error(`Failed to load admin stats (status ${res.status})`);
         }
+        const json = await res.json();
+        setStats(json.data);
       } catch (err) {
         console.error("Admin stats fetch error:", err);
+        setStatsError(err instanceof Error ? err.message : "Failed to load admin stats");
       } finally {
         setLoading(false);
       }
@@ -108,6 +113,8 @@ export default function AdminPage() {
             Connect the contract owner&apos;s wallet to use the controls below.
           </div>
         )}
+
+        {statsError && !loading && <ErrorState message={statsError} />}
 
         {msg && (
           <div

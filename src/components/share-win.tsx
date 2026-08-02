@@ -30,17 +30,23 @@ interface ShareWinProps {
 export function ShareWin({ amount, roundId }: ShareWinProps) {
   const [shareData, setShareData] = useState<ShareData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchShareData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(
         `/api/share-win?roundId=${roundId}&format=png-data`
       );
+      if (!res.ok) {
+        throw new Error(`Failed to load share data (status ${res.status})`);
+      }
       const data = await res.json();
       setShareData(data.data);
-    } catch (error) {
-      console.error("Failed to fetch share data:", error);
+    } catch (err) {
+      console.error("Failed to fetch share data:", err);
+      setError(err instanceof Error ? err.message : "Failed to load share data");
     } finally {
       setLoading(false);
     }
@@ -87,6 +93,12 @@ export function ShareWin({ amount, roundId }: ShareWinProps) {
       >
         {loading ? "Loading..." : "Share Win"}
       </button>
+
+      {error && (
+        <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
 
       {shareData && (
         <div className="space-y-4">

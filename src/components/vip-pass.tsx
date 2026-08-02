@@ -16,6 +16,7 @@ export function VIPPass() {
   const playerId = session?.user?.playerId;
   const [vipInfo, setVipInfo] = useState<VIPPassInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState(false);
 
   useEffect(() => {
@@ -25,12 +26,17 @@ export function VIPPass() {
     }
 
     const fetchVIP = async () => {
+      setError(null);
       try {
         const res = await fetch(`/api/vip?playerId=${playerId}`);
+        if (!res.ok) {
+          throw new Error(`Failed to load VIP info (status ${res.status})`);
+        }
         const data = await res.json();
         setVipInfo(data.data);
-      } catch (error) {
-        console.error("Failed to fetch VIP info:", error);
+      } catch (err) {
+        console.error("Failed to fetch VIP info:", err);
+        setError(err instanceof Error ? err.message : "Failed to load VIP info");
       } finally {
         setLoading(false);
       }
@@ -69,6 +75,14 @@ export function VIPPass() {
 
   if (loading) {
     return <div className="text-slate-400 text-sm">Loading...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-300">
+        {error}
+      </div>
+    );
   }
 
   if (!vipInfo) {
