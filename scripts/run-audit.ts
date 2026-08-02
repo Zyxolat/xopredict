@@ -107,8 +107,8 @@ async function main() {
   const protectedAPIs = [
     { path: "/api/players/me", expected: 401 },
     { path: "/api/profile", expected: 401 },
-    { path: "/api/wallet/connect", expected: 401 },
-    { path: "/api/wallet/disconnect", expected: 401 },
+    { path: "/api/auth/wallet", expected: 401 },
+    { path: "/api/auth/wallets", expected: 401 },
     { path: "/api/admin", expected: 401 },
     { path: "/api/keeper/dashboard", expected: 401 },
     { path: "/api/keeper/cleanup", expected: 401 }
