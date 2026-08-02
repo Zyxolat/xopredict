@@ -8,10 +8,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ──────────────────────────────────────────────────────────
-// Enums
-// ──────────────────────────────────────────────────────────
-
 enum RoundType {
   arena
   solo
@@ -67,27 +63,197 @@ enum DbArenaStatus {
   EXPIRED
 }
 
-// ──────────────────────────────────────────────────────────
-// Auth V2 — Core Identity
-// ──────────────────────────────────────────────────────────
+model KeeperJob {
+  id            String          @id @default(uuid())
+  roundId       BigInt?         @unique
+  arenaId       BigInt?         @unique
+  type          String          @default("SOLO")
+  playerAddress String
+  betAmount     Decimal         @db.Decimal(36, 18)
+  cardIndex     Int             @default(0)
+  stage         KeeperStage     @default(REQUEST_RANDOMNESS)
+  status        KeeperJobStatus @default(PENDING)
+  requestBlock  BigInt?
+  celoPaid      Decimal?        @db.Decimal(36, 18)
+  requestTxHash String?
+  fetchTxHash   String?
+  settleTxHash  String?
+  retryCount    Int             @default(0)
+  lastError     String?
+  nextRetryAt   DateTime?
+  lockedAt      DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
+  @@index([status, stage])
+  @@index([lockedAt])
+  @@map("keeper_jobs")
+}
+
+model Player {
+  id                String          @id @default(uuid())
+  userId            String?         @unique
+  user              User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  address           String?         @unique // Primary wallet address (kept for keeper backward compat)
+  totalWonUsdm      Decimal         @default(0) @db.Decimal(36, 18)
+  totalPlayed       Int             @default(0)
+  dailyBetTotalUsdm Decimal         @default(0) @db.Decimal(36, 18)
+  lastBetDate       DateTime        @default(now()) @db.Date
+  rank              String          @default("Bronze")
+  onboarded         Boolean         @default(false)
+  isBanned          Boolean         @default(false)
+  streakDays        Int             @default(0)
+  lastFreePlay      DateTime?
+  vipExpiresAt      DateTime?
+  createdAt         DateTime        @default(now())
+  picks             Pick[]
+  seasonXp          SeasonXp[]
+  cosmetics         CosmeticOwned[]
+  referralsMade     Referral[]      @relation("referrer")
+  referralReceived  Referral?       @relation("referee")
+
+  @@index([totalWonUsdm(sort: Desc)])
+  @@map("players")
+}
+
+model Round {
+  id            String    @id @default(uuid())
+  roundId       BigInt    @unique
+  type          RoundType
+  commitHash    String
+  serverSeed    String?
+  clientSeed    String?
+  nonce         Int?
+  vrfRandom     String?
+  numbers       Int[]
+  winnerAddress String?
+  potUsdm       Decimal?  @db.Decimal(36, 18)
+  txHash        String?
+  vrfRequestId  String?
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now())
+  picks         Pick[]
+
+  @@index([status])
+  @@index([winnerAddress])
+  @@map("rounds")
+}
+
+model Pick {
+  id        String @id @default(uuid())
+  roundId   String
+  playerId  String
+  cardIndex Int
+  value     Int?
+  round     Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  player    Player @relation(fields: [playerId], references: [id])
+
+  @@index([roundId])
+  @@index([playerId])
+  @@map("picks")
+}
+
+model Referral {
+  id           String   @id @default(uuid())
+  referrerId   String
+  refereeId    String   @unique
+  bonusClaimed Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  referrer     Player   @relation("referrer", fields: [referrerId], references: [id])
+  referee      Player   @relation("referee", fields: [refereeId], references: [id])
+
+  @@index([referrerId])
+  @@map("referrals")
+}
+
+model Season {
+  id        String     @id @default(uuid())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean    @default(true)
+  xp        SeasonXp[]
+
+  @@map("seasons")
+}
+
+model SeasonXp {
+  id       String @id @default(uuid())
+  playerId String
+  seasonId String
+  xp       Int    @default(0)
+  player   Player @relation(fields: [playerId], references: [id])
+  season   Season @relation(fields: [seasonId], references: [id])
+
+  @@unique([playerId, seasonId])
+  @@map("season_xp")
+}
+
+model CosmeticOwned {
+  id          String       @id @default(uuid())
+  playerId    String
+  type        CosmeticType
+  name        String
+  purchasedAt DateTime     @default(now())
+  player      Player       @relation(fields: [playerId], references: [id])
+
+  @@map("cosmetics_owned")
+}
+
+model Arena {
+  id             String        @id @default(uuid())
+  arenaId        BigInt        @unique
+  creatorAddress String
+  inviteCode     String?       @unique
+  isPrivate      Boolean       @default(false)
+  betAmount      Decimal       @db.Decimal(36, 18)
+  maxPlayers     Int
+  currentPlayers Int           @default(1)
+  status         DbArenaStatus @default(OPEN)
+  players        String[]
+  roundId        BigInt?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  expiresAt      DateTime?
+
+  @@index([status, isPrivate])
+  @@index([creatorAddress])
+  @@map("arenas")
+}
+
+model PrivateArena {
+  id             String   @id @default(uuid())
+  creatorId      String
+  inviteCode     String   @unique
+  betAmount      Decimal  @db.Decimal(36, 18)
+  maxPlayers     Int
+  currentPlayers Int      @default(1)
+  status         String   @default("active")
+  playerIds      String[]
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@map("private_arenas")
+}
+
+// NextAuth Models
 model User {
-  id              String     @id @default(cuid())
-  email           String?    @unique
-  username        String?    @unique
-  displayName     String?
-  passwordHash    String?
-  emailVerified   DateTime?  // NextAuth compat: null = not verified, DateTime = verified at
-  avatarUrl       String?
-  bio             String?
-  role            UserRole   @default(USER)
-  status          UserStatus @default(ACTIVE)
-  isAdmin         Boolean    @default(false)
+  id            String     @id @default(cuid())
+  email         String?    @unique
+  username      String?    @unique
+  displayName   String?
+  passwordHash  String?
+  emailVerified DateTime? // NextAuth compat: null = not verified, DateTime = verified at
+  avatarUrl     String?
+  bio           String?
+  role          UserRole   @default(USER)
+  status        UserStatus @default(ACTIVE)
+  isAdmin       Boolean    @default(false)
   // Legacy fields kept for NextAuth adapter compat
-  name            String?
-  image           String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @default(now()) @updatedAt
+  name          String?
+  image         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @default(now()) @updatedAt
 
   // Relations
   accounts           Account[]
@@ -159,196 +325,19 @@ model LoginHistory {
   @@map("login_history")
 }
 
-// ──────────────────────────────────────────────────────────
-// Game Models
-// ──────────────────────────────────────────────────────────
-
-model KeeperJob {
-  id            String          @id @default(uuid())
-  roundId       BigInt?         @unique
-  arenaId       BigInt?         @unique
-  type          String          @default("SOLO")
-  playerAddress String
-  betAmount     Decimal         @db.Decimal(36, 18)
-  cardIndex     Int             @default(0)
-  stage         KeeperStage     @default(REQUEST_RANDOMNESS)
-  status        KeeperJobStatus @default(PENDING)
-  requestBlock  BigInt?
-  celoPaid      Decimal?        @db.Decimal(36, 18)
-  requestTxHash String?
-  fetchTxHash   String?
-  settleTxHash  String?
-  retryCount    Int             @default(0)
-  lastError     String?
-  nextRetryAt   DateTime?
-  lockedAt      DateTime?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-
-  @@index([status, stage])
-  @@index([lockedAt])
-  @@map("keeper_jobs")
-}
-
-model Player {
-  id                 String          @id @default(uuid())
-  userId             String?         @unique
-  user               User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  address            String?         @unique // Primary wallet address (kept for keeper backward compat)
-  totalWonUsdm       Decimal         @default(0) @db.Decimal(36, 18)
-  totalPlayed        Int             @default(0)
-  dailyBetTotalUsdm  Decimal         @default(0) @db.Decimal(36, 18)
-  lastBetDate        DateTime        @default(now()) @db.Date
-  rank               String          @default("Bronze")
-  onboarded          Boolean         @default(false)
-  isBanned           Boolean         @default(false)
-  streakDays         Int             @default(0)
-  lastFreePlay       DateTime?
-  vipExpiresAt       DateTime?
-  createdAt          DateTime        @default(now())
-  picks              Pick[]
-  seasonXp           SeasonXp[]
-  cosmetics          CosmeticOwned[]
-  referralsMade      Referral[]      @relation("referrer")
-  referralReceived   Referral?       @relation("referee")
-
-  @@index([totalWonUsdm(sort: Desc)])
-  @@map("players")
-}
-
-model Round {
-  id            String    @id @default(uuid())
-  roundId       BigInt    @unique
-  type          RoundType
-  commitHash    String
-  serverSeed    String?
-  clientSeed    String?
-  nonce         Int?
-  vrfRandom     String?
-  numbers       Int[]
-  winnerAddress String?
-  potUsdm       Decimal?  @db.Decimal(36, 18)
-  txHash        String?
-  vrfRequestId  String?
-  status        String    @default("pending")
-  createdAt     DateTime  @default(now())
-  picks         Pick[]
-
-  @@index([status])
-  @@index([winnerAddress])
-  @@map("rounds")
-}
-
-model Pick {
-  id        String @id @default(uuid())
-  roundId   String
-  playerId  String
-  cardIndex Int
-  value     Int?
-  round     Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  player    Player @relation(fields: [playerId], references: [id])
-
-  @@index([roundId])
-  @@index([playerId])
-  @@map("picks")
-}
-
-model Referral {
-  id           String   @id @default(uuid())
-  referrerId   String
-  refereeId    String   @unique
-  bonusClaimed Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  referrer     Player   @relation("referrer", fields: [referrerId], references: [id])
-  referee      Player   @relation("referee", fields: [refereeId], references: [id])
-
-  @@index([referrerId])
-  @@map("referrals")
-}
-
-model Season {
-  id        String     @id @default(uuid())
-  name      String
-  startDate DateTime
-  endDate   DateTime
-  isActive  Boolean    @default(true)
-  xp        SeasonXp[]
-  @@map("seasons")
-}
-
-model SeasonXp {
-  id       String @id @default(uuid())
-  playerId String
-  seasonId String
-  xp       Int    @default(0)
-  player   Player @relation(fields: [playerId], references: [id])
-  season   Season @relation(fields: [seasonId], references: [id])
-  @@unique([playerId, seasonId])
-  @@map("season_xp")
-}
-
-model CosmeticOwned {
-  id          String       @id @default(uuid())
-  playerId    String
-  type        CosmeticType
-  name        String
-  purchasedAt DateTime     @default(now())
-  player      Player       @relation(fields: [playerId], references: [id])
-  @@map("cosmetics_owned")
-}
-
-model Arena {
-  id             String        @id @default(uuid())
-  arenaId        BigInt        @unique
-  creatorAddress String
-  inviteCode     String?       @unique
-  isPrivate      Boolean       @default(false)
-  betAmount      Decimal       @db.Decimal(36, 18)
-  maxPlayers     Int
-  currentPlayers Int           @default(1)
-  status         DbArenaStatus @default(OPEN)
-  players        String[]
-  roundId        BigInt?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  expiresAt      DateTime?
-
-  @@index([status, isPrivate])
-  @@index([creatorAddress])
-  @@map("arenas")
-}
-
-model PrivateArena {
-  id             String   @id @default(uuid())
-  creatorId      String
-  inviteCode     String   @unique
-  betAmount      Decimal  @db.Decimal(36, 18)
-  maxPlayers     Int
-  currentPlayers Int      @default(1)
-  status         String   @default("active")
-  playerIds      String[]
-  createdAt      DateTime @default(now())
-  expiresAt      DateTime
-  @@map("private_arenas")
-}
-
-// ──────────────────────────────────────────────────────────
-// NextAuth Adapter Models
-// ──────────────────────────────────────────────────────────
-
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?  @db.Text
-  access_token       String?  @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?  @db.Text
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -362,6 +351,7 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("sessions")
 }
 
