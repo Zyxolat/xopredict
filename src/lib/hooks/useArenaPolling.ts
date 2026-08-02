@@ -15,6 +15,7 @@ export interface StatusResponseData {
     players: string[];
     settled?: boolean;
     winner?: string | null;
+    roundId?: string | null;
   };
 }
 

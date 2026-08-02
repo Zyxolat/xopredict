@@ -63,6 +63,10 @@ export default function ArenaPage({ params }: { params: { id: string } }) {
 
   const currentStatus = statusData?.status || arena?.status || "OPEN";
   const winner = statusData?.arena?.winner || arena?.winner;
+  const roundIdForShare = statusData?.arena?.roundId || null;
+  const isSelfWinner = Boolean(
+    winner && playerLower && winner.toLowerCase() === playerLower
+  );
 
   return (
     <AppShell title={`Arena #${params.id}`}>
@@ -259,12 +263,16 @@ export default function ArenaPage({ params }: { params: { id: string } }) {
             <p className="mt-2 font-mono text-sm text-[#d5a7ff]">
               WINNER: {winner ? `${winner.slice(0, 6)}...${winner.slice(-4)}` : "PROTOCOL OWNER"}
             </p>
-            <div className="mt-6 max-w-md mx-auto">
-              <ShareWin
-                amount={Number(arena?.betAmount || 10) * (arena?.currentPlayers || 2)}
-                roundId={params.id}
-              />
-            </div>
+            {isSelfWinner && roundIdForShare && (
+              <div className="mt-6 max-w-md mx-auto">
+                <ShareWin
+                  amount={
+                    (Number(arena?.betAmount || 10) * (arena?.currentPlayers || 2) * 95) / 100
+                  }
+                  roundId={roundIdForShare}
+                />
+              </div>
+            )}
             <div className="mt-6 flex justify-center gap-4">
               <Link
                 href="/arena"
