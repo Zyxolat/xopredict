@@ -11,12 +11,12 @@ export async function GET(req: NextRequest) {
     const roundId = req.nextUrl.searchParams.get("roundId");
     const format = req.nextUrl.searchParams.get("format") || "json"; // json, png-data
 
-    if (!roundId) {
-      return NextResponse.json({ error: "Round ID required" }, { status: 400 });
+    if (!roundId || isNaN(Number(roundId))) {
+      return NextResponse.json({ error: "Valid on-chain round ID is required" }, { status: 400 });
     }
 
     const round = await prisma.round.findUnique({
-      where: { id: roundId },
+      where: { roundId: BigInt(roundId) },
     });
 
     if (!round) {

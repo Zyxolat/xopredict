@@ -38,6 +38,13 @@ export default function SoloPage() {
     fetchTxHash?: string | null;
     settleTxHash?: string | null;
   }>({});
+  const [gameResult, setGameResult] = useState<{
+    numbers: string[];
+    selectedCard: number;
+    winnerAddress: string;
+    potUsdm: string;
+    won: boolean;
+  } | null>(null);
 
   const { balance, isLoading, isConnected, refetch: refetchBalance } = useUsdmBalance();
 
@@ -78,31 +85,21 @@ export default function SoloPage() {
           eventName: "RoundCreated",
           logs: startReceipt.logs,
         });
-        if (logs && logs.length > 0) {
-          const logArgs = (logs[0] as unknown as { args?: { roundId?: bigint } })?.args;
-          if (logArgs?.roundId) {
-            const gameId = logArgs.roundId;
-            setActiveGameId(gameId);
-            setGameStep("game_created");
-            void refetchBalance();
-          } else {
-            const fallbackId = BigInt(Date.now());
-            setActiveGameId(fallbackId);
-            setGameStep("game_created");
-            void refetchBalance();
-          }
-        } else {
-          const fallbackId = BigInt(Date.now());
-          setActiveGameId(fallbackId);
+        const logArgs = (logs?.[0] as unknown as { args?: { roundId?: bigint } })?.args;
+        if (logArgs?.roundId) {
+          setActiveGameId(logArgs.roundId);
           setGameStep("game_created");
           void refetchBalance();
+        } else {
+          setSyncError(
+            "Game was created on-chain but the round ID could not be read. Please refresh and check your transaction history before retrying."
+          );
         }
       } catch (err) {
         console.error("Error parsing RoundCreated logs:", err);
-        const fallbackId = BigInt(Date.now());
-        setActiveGameId(fallbackId);
-        setGameStep("game_created");
-        void refetchBalance();
+        setSyncError(
+          "Game was created on-chain but the round ID could not be read. Please refresh and check your transaction history before retrying."
+        );
       }
     }
   }, [startStatus, startReceipt, activeGameId, refetchBalance]);
@@ -178,11 +175,16 @@ export default function SoloPage() {
             fetchTxHash: data.fetchTxHash,
             settleTxHash: data.settleTxHash,
           });
+          if (data.result) {
+            setGameResult(data.result);
+          }
 
           if (data.status === "COMPLETED" || data.stage === "COMPLETED") {
             void refetchBalance();
-            setShowConfetti(true);
-            setTimeout(() => setShowConfetti(false), 2000);
+            if (data.result?.won) {
+              setShowConfetti(true);
+              setTimeout(() => setShowConfetti(false), 2000);
+            }
             clearInterval(pollInterval);
           }
         }
@@ -346,14 +348,15 @@ export default function SoloPage() {
           {["LEFT PATH", "RIGHT PATH"].map((label, index) => {
             const isSelected = pickedCard === index;
             const canPick = gameStep === "game_created" && !isPickBusy;
+            const revealed = keeperStatus === "COMPLETED" && gameResult !== null;
 
             return (
               <div key={label} className="relative">
                 <Card3D
                   label={label}
                   selected={isSelected}
-                  revealed={keeperStatus === "COMPLETED"}
-                  value={index === 1 ? 100 : 42}
+                  revealed={revealed}
+                  value={revealed ? Number(gameResult!.numbers[index]) : undefined}
                   onClick={() => canPick && handleSelectCard(index)}
                 />
                 {gameStep === "enter_bet" && (
@@ -471,7 +474,9 @@ export default function SoloPage() {
             <motion.div
               className={`rounded-2xl border p-5 text-center transition ${
                 keeperStatus === "COMPLETED"
-                  ? "border-[#4ce47d]/40 bg-[#4ce47d]/[.1]"
+                  ? gameResult?.won
+                    ? "border-[#4ce47d]/40 bg-[#4ce47d]/[.1]"
+                    : "border-red-400/40 bg-red-400/[.1]"
                   : keeperStatus === "FAILED"
                   ? "border-red-400/40 bg-red-400/[.1]"
                   : "border-[#d5a7ff]/30 bg-[#d5a7ff]/[.08]"
@@ -487,9 +492,19 @@ export default function SoloPage() {
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                   />
                 )}
-                <p className="font-mono text-base font-bold tracking-[.18em] text-[#d5a7ff]">
+                <p className={`font-mono text-base font-bold tracking-[.18em] ${
+                  keeperStatus === "COMPLETED" && gameResult
+                    ? gameResult.won
+                      ? "text-[#4ce47d]"
+                      : "text-red-400"
+                    : "text-[#d5a7ff]"
+                }`}>
                   {keeperStatus === "COMPLETED"
-                    ? "ROUND COMPLETED & SETTLED!"
+                    ? gameResult
+                      ? gameResult.won
+                        ? "YOU WON!"
+                        : "YOU LOST"
+                      : "ROUND COMPLETED & SETTLED!"
                     : keeperStage === "REQUEST_RANDOMNESS"
                     ? "REQUESTING RANDOMNESS..."
                     : keeperStage === "AWAIT_WITNET"
@@ -532,10 +547,10 @@ export default function SoloPage() {
                 </div>
               )}
 
-              {keeperStatus === "COMPLETED" && (
+              {keeperStatus === "COMPLETED" && gameResult?.won && (
                 <div className="mt-6 border-t border-white/10 pt-4">
                   <ShareWin
-                    amount={Number(bet || "1") * 1.95}
+                    amount={Number(gameResult.potUsdm) / 1e18}
                     roundId={activeGameId?.toString() || "1"}
                   />
                 </div>

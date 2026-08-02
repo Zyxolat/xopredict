@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { processKeeperJob } from "@/lib/keeper/processor";
 import { getStageDescription } from "@/lib/keeper/types";
+import { publicClient } from "@/lib/keeper/wallet";
+import { xolatAbi, xolatAddress } from "@/lib/contracts";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,47 @@ export async function GET(
 
     const message = getStageDescription(job.stage, job.status);
 
+    // Once the round is settled on-chain, fetch the real result (card values,
+    // which card the player picked, winner, payout) so the frontend can show
+    // the actual outcome instead of guessing/faking it.
+    let result: {
+      numbers: string[];
+      selectedCard: number;
+      winnerAddress: string;
+      potUsdm: string;
+      won: boolean;
+    } | null = null;
+
+    if (job.stage === "COMPLETED" && job.status === "COMPLETED" && xolatAddress) {
+      try {
+        const roundData = (await publicClient.readContract({
+          address: xolatAddress,
+          abi: xolatAbi,
+          functionName: "getRound",
+          args: [roundId],
+        })) as unknown as readonly [
+          bigint, string, `0x${string}`, bigint, `0x${string}`, string, string,
+          bigint, `0x${string}`, readonly bigint[], `0x${string}`, bigint, string,
+          number, string, bigint
+        ];
+
+        const numbers = roundData[9];
+        const winnerAddress = roundData[10];
+        const potUsdm = roundData[11];
+        const selectedCard = roundData[13];
+
+        result = {
+          numbers: numbers.map((n) => n.toString()),
+          selectedCard,
+          winnerAddress,
+          potUsdm: potUsdm.toString(),
+          won: winnerAddress.toLowerCase() === roundData[2].toLowerCase(),
+        };
+      } catch (err) {
+        console.error(`[API Keeper Status] Could not read on-chain result for round #${roundIdStr}:`, err);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       roundId: (job.roundId ?? roundId).toString(),
@@ -51,6 +94,7 @@ export async function GET(
       retryCount: job.retryCount,
       lastError: job.lastError || null,
       message,
+      result,
       updatedAt: job.updatedAt.toISOString(),
     });
   } catch (error: unknown) {
