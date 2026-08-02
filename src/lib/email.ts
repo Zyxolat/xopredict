@@ -14,6 +14,17 @@ function getResendClient(): Resend {
 const FROM_EMAIL = process.env.EMAIL_FROM || "XOLAT <noreply@xopredict.com>";
 
 /**
+ * Masks an email address for safe logging (avoids writing full PII to logs).
+ * e.g. "john.doe@example.com" -> "jo***@example.com"
+ */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) return "***";
+  const visible = local.slice(0, 2);
+  return `${visible}***@${domain}`;
+}
+
+/**
  * Send a 6-digit OTP for email verification during registration.
  */
 export async function sendVerificationOTP(
@@ -23,7 +34,7 @@ export async function sendVerificationOTP(
   const resend = getResendClient();
   const subject = "Verify your XOLAT account";
   const start = Date.now();
-  console.log(`[email] SEND recipient=${email} subject="${subject}" provider=resend`);
+  console.log(`[email] SEND recipient=${maskEmail(email)} subject="${subject}" provider=resend`);
   const result = await resend.emails.send({
     from: FROM_EMAIL,
     to: email,
@@ -44,10 +55,10 @@ export async function sendVerificationOTP(
   });
   const duration = Date.now() - start;
   if (result.error) {
-    console.error(`[email] FAIL recipient=${email} subject="${subject}" provider=resend duration=${duration}ms status=${result.error.name} error="${result.error.message}"`);
+    console.error(`[email] FAIL recipient=${maskEmail(email)} subject="${subject}" provider=resend duration=${duration}ms status=${result.error.name} error="${result.error.message}"`);
     throw new Error(`Resend error: ${result.error.message}`);
   }
-  console.log(`[email] OK recipient=${email} subject="${subject}" provider=resend messageId=${result.data?.id} duration=${duration}ms`);
+  console.log(`[email] OK recipient=${maskEmail(email)} subject="${subject}" provider=resend messageId=${result.data?.id} duration=${duration}ms`);
 }
 
 
