@@ -15,9 +15,12 @@ npx prisma migrate deploy
 
 ## 2. Automated Cleanup Tasks
 
-Trigger database cleanup for expired nonces, sessions, and old jobs:
+Trigger database cleanup for expired nonces, sessions, and old jobs. This endpoint
+requires an authenticated admin session (send the admin's NextAuth session cookie
+with the request):
 ```bash
-curl -X POST https://xopredict.com/api/keeper/cleanup
+curl -X POST https://xopredict.com/api/keeper/cleanup \
+  -H "Cookie: next-auth.session-token=<admin-session-token>"
 ```
 
 ---

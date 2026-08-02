@@ -6,8 +6,16 @@ import { xolatAbi, xolatAddress } from "@/lib/contracts";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const startTime = Date.now();
+
+  // Sensitive operational details (relayer address/balance, contract address,
+  // treasury balance, RPC endpoint, git SHA) are only included when the caller
+  // presents the shared ops secret. Docker/Railway health checks only inspect
+  // the HTTP status code, so gating these fields does not break them.
+  const configuredSecret = process.env.KEEPER_HEALTH_SECRET;
+  const providedSecret = request.headers.get("x-keeper-secret");
+  const includeSensitive = Boolean(configuredSecret) && providedSecret === configuredSecret;
 
   let dbOk = false;
   let dbLatencyMs = 0;
@@ -111,7 +119,9 @@ export async function GET() {
       environment: process.env.NODE_ENV || "development",
       nodeVersion: process.version,
       applicationVersion: "0.1.0",
-      gitCommit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "main",
+      gitCommit: includeSensitive
+        ? process.env.RAILWAY_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "main"
+        : undefined,
       uptimeSeconds,
       components: {
         database: {
@@ -121,8 +131,10 @@ export async function GET() {
         },
         celoRpc: {
           ok: celoRpcOk,
-          currentBlock,
-          endpoint: process.env.NEXT_PUBLIC_CELO_RPC_URL || "https://forno.celo.org",
+          currentBlock: includeSensitive ? currentBlock : undefined,
+          endpoint: includeSensitive
+            ? process.env.NEXT_PUBLIC_CELO_RPC_URL || "https://forno.celo.org"
+            : undefined,
         },
         witnet: {
           ok: celoRpcOk,
@@ -130,10 +142,10 @@ export async function GET() {
         },
         smartContract: {
           ok: contractOk,
-          address: xolatAddress || null,
-          arenaCount: arenaCountStr,
-          roundCount: roundCountStr,
-          usdmTreasuryBalance,
+          address: includeSensitive ? xolatAddress || null : undefined,
+          arenaCount: includeSensitive ? arenaCountStr : undefined,
+          roundCount: includeSensitive ? roundCountStr : undefined,
+          usdmTreasuryBalance: includeSensitive ? usdmTreasuryBalance : undefined,
         },
         keeperWorker: {
           ok: relayerHealth.configured,
@@ -145,8 +157,8 @@ export async function GET() {
         },
         relayerWallet: {
           configured: relayerHealth.configured,
-          address: relayerHealth.address,
-          balanceCelo: relayerHealth.balanceCelo,
+          address: includeSensitive ? relayerHealth.address : undefined,
+          balanceCelo: includeSensitive ? relayerHealth.balanceCelo : undefined,
           isBalanceLow: relayerHealth.isBalanceLow,
           thresholdCelo: "1.0",
         },

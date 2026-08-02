@@ -11,7 +11,7 @@ Standard Operating Procedures (SOP) forSite Reliability Engineers (SRE) and DevO
 - Logs show `[Keeper Wallet Warning] Relayer native CELO balance is low`.
 
 ### Action
-1. Query relayer address from `/api/keeper/health`.
+1. Query relayer address from `/api/keeper/health` (send header `x-keeper-secret: <KEEPER_HEALTH_SECRET>` to reveal the relayer address/balance — these fields are redacted for unauthenticated callers).
 2. Transfer 5-10 CELO to relayer wallet address on Celo Mainnet.
 3. Verify `/api/keeper/health` returns `200 OK` and balance updates.
 

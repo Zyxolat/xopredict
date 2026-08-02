@@ -25,3 +25,4 @@ Reference guide for all required and optional environment variables.
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID | `null` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | `null` |
 | `CLEANUP_RETENTION_DAYS` | Retention days for old jobs | `30` |
+| `KEEPER_HEALTH_SECRET` | Shared secret required (via `x-keeper-secret` header) to view sensitive fields on `/api/keeper/health` (relayer address/balance, contract address, treasury balance, RPC endpoint, git SHA). If unset, those fields are always redacted. | `null` |
