@@ -4,6 +4,19 @@ import { publicClient } from "@/lib/keeper/wallet";
 import { xolatAbi, xolatAddress } from "@/lib/contracts";
 import { registerArenaEvent } from "@/lib/keeper/listener";
 import { processKeeperJob } from "@/lib/keeper/processor";
+import { parseUnits } from "viem";
+
+type OnChainArenaTuple = readonly [
+  arenaId: bigint,
+  betAmount: bigint,
+  maxPlayers: number,
+  playerCount: number,
+  settled: boolean,
+  winner: `0x${string}`,
+  createdAt: bigint,
+  players: readonly `0x${string}`[],
+  status: number
+];
 
 export const ONCHAIN_STATUS_MAP: Record<number, DbArenaStatus> = {
   0: "OPEN",
@@ -124,10 +137,47 @@ export class ArenaService {
   }
 
   /**
-   * Create an arena record in DB and register Keeper job
+   * Create an arena record in DB and register Keeper job.
+   *
+   * Verifies the arena actually exists on-chain with matching
+   * creator/betAmount/maxPlayers before persisting, so a caller cannot
+   * fabricate a phantom DB-only arena (which other players could then
+   * "join" without any real funds ever being escrowed on-chain, and
+   * which could later collide with a legitimately created on-chain arena
+   * sharing the same arenaId).
    */
   static async createArena(input: CreateArenaInput) {
     const creatorLower = input.creatorAddress.toLowerCase();
+
+    if (!xolatAddress) {
+      throw new Error("Contract address not configured");
+    }
+
+    const [onChainArenaId, onChainBetAmount, onChainMaxPlayers, playerCount, , , , players] =
+      (await publicClient.readContract({
+        address: xolatAddress,
+        abi: xolatAbi,
+        functionName: "getArena",
+        args: [input.arenaId],
+      })) as unknown as OnChainArenaTuple;
+
+    if (onChainArenaId === 0n || playerCount === 0) {
+      throw new Error("Arena does not exist on-chain");
+    }
+
+    const onChainCreator = (players as readonly string[])[0]?.toLowerCase();
+    if (onChainCreator !== creatorLower) {
+      throw new Error("Creator address does not match on-chain arena creator");
+    }
+
+    const expectedBetAmountWei = parseUnits(input.betAmount, 18);
+    if (onChainBetAmount !== expectedBetAmountWei) {
+      throw new Error("Bet amount does not match on-chain arena");
+    }
+
+    if (Number(onChainMaxPlayers) !== input.maxPlayers) {
+      throw new Error("Max players does not match on-chain arena");
+    }
 
     const createdArena = await prisma.arena.create({
       data: {

@@ -22,6 +22,8 @@ const mockPrisma = vi.hoisted(() => ({
   privateArena: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
 }));
 
+const mockReadContract = vi.hoisted(() => vi.fn());
+
 vi.mock("next-auth", () => ({
   getServerSession: mockGetServerSession,
   default: vi.fn(),
@@ -30,8 +32,15 @@ vi.mock("next-auth", () => ({
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
 vi.mock("@/lib/keeper/wallet", () => ({
-  publicClient: { readContract: vi.fn() },
+  publicClient: { readContract: mockReadContract },
 }));
+vi.mock("@/lib/contracts", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/contracts")>("@/lib/contracts");
+  return {
+    ...actual,
+    xolatAddress: "0x9999999999999999999999999999999999999999" as `0x${string}`,
+  };
+});
 
 function authedSession(address: string = PLAYER1_ADDR) {
   mockGetServerSession.mockResolvedValue({
@@ -149,6 +158,17 @@ describe("Phase 4.2 Arena Backend & Persistence APIs", () => {
 
     it("creates arena record in Prisma DB", async () => {
       authedSession();
+      mockReadContract.mockResolvedValueOnce([
+        1n,
+        10n * 10n ** 18n,
+        2,
+        1,
+        false,
+        PLAYER1_ADDR.toLowerCase(),
+        BigInt(Math.floor(Date.now() / 1000)),
+        [PLAYER1_ADDR.toLowerCase()],
+        0,
+      ]);
       mockPrisma.arena.create.mockResolvedValue({
         id: "arena-uuid-1",
         arenaId: 1n,
