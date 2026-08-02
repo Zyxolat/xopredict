@@ -149,6 +149,8 @@ function UserDropdown() {
 // ── MobileMenu ────────────────────────────────────────────
 
 function MobileMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const { data: session } = useSession();
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -174,7 +176,13 @@ function MobileMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
               </button>
             </div>
             <div className="space-y-1">
-              {navLinks.map(({ href, label, icon: Icon }) => (
+              {[
+                { href: "/arena", label: "Arena", icon: Gamepad2 },
+                { href: "/solo", label: "Solo", icon: Trophy },
+                { href: "/leaderboard", label: "Leaderboard", icon: Award },
+                { href: "/#how-it-works", label: "How to Play", icon: ShieldCheck },
+                { href: "/#faq", label: "About", icon: UserRound },
+              ].map(({ href, label, icon: Icon }) => (
                 <Link
                   key={href}
                   href={href}
@@ -185,14 +193,34 @@ function MobileMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
                   {label.toUpperCase()}
                 </Link>
               ))}
+
               <div className="pt-4 mt-4 border-t border-white/10">
-                <button
-                  onClick={() => { onClose(); void signOut({ callbackUrl: "/login" }); }}
-                  className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-mono text-xs text-red-300 hover:bg-red-500/10 transition"
-                >
-                  <LogOut size={16} />
-                  SIGN OUT
-                </button>
+                {session?.user ? (
+                  <button
+                    onClick={() => { onClose(); void signOut({ callbackUrl: "/login" }); }}
+                    className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-mono text-xs text-red-300 hover:bg-red-500/10 transition"
+                  >
+                    <LogOut size={16} />
+                    SIGN OUT
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <Link
+                      href="/login"
+                      onClick={onClose}
+                      className="block w-full text-center rounded-xl border border-white/20 px-4 py-2.5 font-mono text-xs font-bold text-white hover:bg-white/10 transition"
+                    >
+                      LOGIN
+                    </Link>
+                    <Link
+                      href="/register"
+                      onClick={onClose}
+                      className="block w-full text-center rounded-xl bg-gradient-to-r from-[#d5a7ff] to-[#a855f7] px-4 py-2.5 font-mono text-xs font-bold text-black shadow-lg transition"
+                    >
+                      SIGN UP
+                    </Link>
+                  </div>
+                )}
               </div>
             </div>
           </motion.nav>
@@ -232,26 +260,45 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
               ⬡ XOLAT
             </Link>
 
-            {/* Desktop inner nav (authenticated only) */}
-            {session?.user && (
-              <nav className="hidden lg:flex items-center gap-4 ml-4">
-                {[
-                  { href: "/arena", label: "Arena" },
-                  { href: "/solo", label: "Solo" },
-                  { href: "/leaderboard", label: "Ranks" },
-                ].map(({ href, label }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    className={`font-mono text-xs tracking-wider transition ${
-                      path.startsWith(href) ? "text-[#d5a7ff]" : "text-[#8e8892] hover:text-[#d5a7ff]"
-                    }`}
-                  >
-                    {label.toUpperCase()}
-                  </Link>
-                ))}
-              </nav>
-            )}
+            {/* Desktop Nav Links */}
+            <nav className="hidden md:flex items-center gap-5 ml-4">
+              <Link
+                href="/arena"
+                className={`font-mono text-xs tracking-wider transition ${
+                  path.startsWith("/arena") ? "text-[#d5a7ff]" : "text-[#8e8892] hover:text-[#d5a7ff]"
+                }`}
+              >
+                ARENA
+              </Link>
+              <Link
+                href="/solo"
+                className={`font-mono text-xs tracking-wider transition ${
+                  path.startsWith("/solo") ? "text-[#d5a7ff]" : "text-[#8e8892] hover:text-[#d5a7ff]"
+                }`}
+              >
+                SOLO
+              </Link>
+              <Link
+                href="/leaderboard"
+                className={`font-mono text-xs tracking-wider transition ${
+                  path.startsWith("/leaderboard") ? "text-[#d5a7ff]" : "text-[#8e8892] hover:text-[#d5a7ff]"
+                }`}
+              >
+                LEADERBOARD
+              </Link>
+              <Link
+                href="/#how-it-works"
+                className="font-mono text-xs tracking-wider text-[#8e8892] hover:text-[#d5a7ff] transition"
+              >
+                HOW TO PLAY
+              </Link>
+              <Link
+                href="/#faq"
+                className="font-mono text-xs tracking-wider text-[#8e8892] hover:text-[#d5a7ff] transition"
+              >
+                ABOUT
+              </Link>
+            </nav>
           </div>
 
           {/* Right: Authenticated or anonymous controls */}
@@ -276,7 +323,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
 
                 {/* Mobile hamburger */}
                 <button
-                  className="flex lg:hidden h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#a79cae] hover:text-white transition"
+                  className="flex md:hidden h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#a79cae] hover:text-white transition"
                   onClick={() => setMobileMenuOpen(true)}
                   aria-label="Open menu"
                 >
@@ -298,6 +345,13 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
                 >
                   SIGN UP
                 </Link>
+                <button
+                  className="flex md:hidden h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#a79cae] hover:text-white transition"
+                  onClick={() => setMobileMenuOpen(true)}
+                  aria-label="Open menu"
+                >
+                  <Menu size={16} />
+                </button>
               </div>
             )}
           </div>
