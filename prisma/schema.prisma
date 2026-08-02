@@ -243,12 +243,20 @@ model User {
   username      String?    @unique
   displayName   String?
   passwordHash  String?
+  passwordChangedAt DateTime? // set on password change/reset; used to invalidate stale JWTs issued before this timestamp
   emailVerified DateTime? // NextAuth compat: null = not verified, DateTime = verified at
   avatarUrl     String?
   bio           String?
   role          UserRole   @default(USER)
   status        UserStatus @default(ACTIVE)
   isAdmin       Boolean    @default(false)
+  // Notification preferences
+  notifyMatchSettlement Boolean @default(true)
+  notifySecurityAlerts  Boolean @default(true)
+  notifyPromotions      Boolean @default(false)
+  // Privacy preferences
+  showOnLeaderboard      Boolean @default(true)
+  allowMatchHistoryView  Boolean @default(true)
   // Legacy fields kept for NextAuth adapter compat
   name          String?
   image         String?
