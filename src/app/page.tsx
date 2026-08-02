@@ -191,10 +191,10 @@ function PublicLandingPage() {
             <Link href="/solo" className="hover:text-white transition">SOLO</Link>
             <Link href="/leaderboard" className="hover:text-white transition">LEADERBOARD</Link>
             <Link href="#how-it-works" className="hover:text-white transition">HOW TO PLAY</Link>
-            <Link href="#faq" className="hover:text-white transition">FAQ</Link>
+            <Link href="#faq" className="hover:text-white transition">ABOUT</Link>
           </nav>
 
-          {/* Auth CTA */}
+          {/* Auth CTA & Mobile button */}
           <div className="flex items-center gap-3">
             <Link
               href="/login"
