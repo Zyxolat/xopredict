@@ -77,6 +77,8 @@ export function useCreateArena() {
     if (!isConfirmed || !receipt || !address) return;
 
     let arenaIdFromLogs: bigint | null = null;
+    let betAmountFromLogs: bigint | null = null;
+    let maxPlayersFromLogs: number | null = null;
 
     try {
       const logs = parseEventLogs({
@@ -86,25 +88,33 @@ export function useCreateArena() {
       });
 
       if (logs.length > 0) {
-        const logArgs = (logs[0] as unknown as { args?: { arenaId?: bigint } })?.args;
+        const logArgs = (logs[0] as unknown as {
+          args?: { arenaId?: bigint; betAmount?: bigint; maxPlayers?: number };
+        })?.args;
         if (logArgs?.arenaId !== undefined) {
           arenaIdFromLogs = logArgs.arenaId;
           setCreatedArenaId(arenaIdFromLogs);
+        }
+        if (logArgs?.betAmount !== undefined) {
+          betAmountFromLogs = logArgs.betAmount;
+        }
+        if (logArgs?.maxPlayers !== undefined) {
+          maxPlayersFromLogs = logArgs.maxPlayers;
         }
       }
     } catch (err) {
       console.warn("[useCreateArena] Log parsing warning:", err);
     }
 
-    if (arenaIdFromLogs !== null) {
+    if (arenaIdFromLogs !== null && betAmountFromLogs !== null && maxPlayersFromLogs !== null) {
       setIsSyncingDb(true);
       fetch("/api/arenas", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           arenaId: arenaIdFromLogs.toString(),
-          betAmount: formatUnits(10n ** 18n, 18), // standard format
-          maxPlayers: 2,
+          betAmount: formatUnits(betAmountFromLogs, 18),
+          maxPlayers: maxPlayersFromLogs,
           creatorAddress: address,
           transactionHash: receipt.transactionHash,
         }),
