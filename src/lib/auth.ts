@@ -1,5 +1,6 @@
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import GoogleProvider from "next-auth/providers/google";
+import EmailProvider from "next-auth/providers/email";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
 import { prisma } from "@/lib/prisma";
@@ -10,8 +11,9 @@ declare module "next-auth" {
     id?: string;
     username?: string;
     displayName?: string;
+    emailVerified?: string | Date | null;
     role?: string;
-    emailVerified?: Date | null;
+    isAdmin?: boolean;
     playerId?: string;
   }
   interface Session {
@@ -19,22 +21,16 @@ declare module "next-auth" {
       id?: string;
       username?: string;
       displayName?: string;
+      emailVerified?: string | Date | null;
       role?: string;
-      emailVerified?: Date | null;
+      isAdmin?: boolean;
       playerId?: string;
     };
   }
 }
 
-declare module "next-auth/jwt" {
-  interface JWT {
-    id?: string;
-    username?: string;
-    displayName?: string;
-    role?: string;
-    emailVerified?: Date | null;
-    playerId?: string;
-  }
+if (!process.env.NEXTAUTH_SECRET) {
+  throw new Error("NEXTAUTH_SECRET environment variable is required");
 }
 
 export const authOptions: NextAuthOptions = {
@@ -43,168 +39,154 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
-    newUser: "/register",
   },
   callbacks: {
-    async jwt({ token, user, account, trigger, session }) {
-      // Initial sign-in: populate token from user record
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
-        token.username = user.username;
-        token.displayName = user.displayName;
-        token.role = user.role;
-        token.emailVerified = user.emailVerified;
-        token.playerId = user.playerId;
       }
 
-      // Handle session update trigger (e.g., after profile edit)
-      if (trigger === "update" && session) {
-        if (session.username) token.username = session.username;
-        if (session.displayName) token.displayName = session.displayName;
+      if (!token.id) {
+        return token;
       }
 
-      // For Google sign-in: find or create Player, set fields
-      if (account?.provider === "google" && user?.id) {
+      // Google OAuth sign-ins don't go through /api/auth/register, so ensure
+      // a linked Player row exists for the game profile.
+      if (account?.provider === "google") {
         try {
-          const dbUser = await prisma.user.findUnique({
-            where: { id: user.id },
-            include: { player: true },
+          const existingPlayer = await prisma.player.findUnique({
+            where: { userId: token.id as string },
           });
 
-          if (dbUser) {
-            // Set username from email prefix if not already set
-            if (!dbUser.username && dbUser.email) {
-              const prefix = dbUser.email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 20);
-              // Check uniqueness
-              const existing = await prisma.user.findFirst({
-                where: { username: { equals: prefix, mode: "insensitive" } },
-              });
-              if (!existing) {
-                await prisma.user.update({
-                  where: { id: dbUser.id },
-                  data: { username: prefix, displayName: dbUser.name || prefix },
-                });
-                token.username = prefix;
-                token.displayName = dbUser.name || prefix;
-              }
-            } else {
-              token.username = dbUser.username || undefined;
-              token.displayName = dbUser.displayName || undefined;
-            }
-
-            token.role = dbUser.role;
-            token.emailVerified = dbUser.emailVerified;
-
-            // Create Player record if not exists
-            let player = dbUser.player;
-            if (!player) {
-              player = await prisma.player.create({
-                data: { userId: dbUser.id },
-              });
-            }
-            token.playerId = player.id;
+          if (!existingPlayer) {
+            await prisma.player.create({
+              data: { userId: token.id as string },
+            });
           }
         } catch (error) {
-          console.error("JWT callback Google error:", error);
+          console.error("Failed to provision Player for Google sign-in:", error);
+        }
+      }
+
+      // Hydrate the token with the latest identity fields + linked Player id.
+      // Only re-fetch when missing, so this stays a one-time cost per session.
+      if (token.role === undefined) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: {
+            email: true,
+            username: true,
+            displayName: true,
+            role: true,
+            isAdmin: true,
+            emailVerified: true,
+            player: { select: { id: true } },
+          },
+        });
+
+        if (dbUser) {
+          token.email = dbUser.email ?? undefined;
+          token.username = dbUser.username ?? undefined;
+          token.displayName = dbUser.displayName ?? undefined;
+          token.role = dbUser.role;
+          token.isAdmin = dbUser.isAdmin;
+          token.emailVerified = dbUser.emailVerified;
+          token.playerId = dbUser.player?.id;
         }
       }
 
       return token;
     },
-
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.username = token.username as string;
-        session.user.displayName = token.displayName as string;
-        session.user.role = token.role as string;
-        session.user.emailVerified = token.emailVerified as Date | null;
-        session.user.playerId = token.playerId as string;
+        session.user.email = (token.email as string | undefined) ?? session.user.email;
+        session.user.username = token.username as string | undefined;
+        session.user.displayName = token.displayName as string | undefined;
+        session.user.role = token.role as string | undefined;
+        session.user.isAdmin = token.isAdmin as boolean | undefined;
+        session.user.emailVerified = token.emailVerified as string | Date | null | undefined;
+        session.user.playerId = token.playerId as string | undefined;
       }
       return session;
     },
-
     async redirect({ url, baseUrl }) {
+      // Redirect to home page or dashboard after sign in
       if (url.startsWith("/")) return `${baseUrl}${url}`;
       else if (new URL(url).origin === baseUrl) return url;
       return baseUrl;
     },
   },
-
   providers: [
-    // Email + Password authentication
     CredentialsProvider({
       id: "credentials",
-      name: "Email & Password",
+      name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password are required");
+          throw new Error("Missing email or password");
         }
 
         const email = credentials.email.toLowerCase().trim();
-        const user = await prisma.user.findUnique({
-          where: { email },
-          include: { player: true },
-        });
+        const user = await prisma.user.findUnique({ where: { email } });
 
-        if (!user) {
+        if (!user || !user.passwordHash) {
           throw new Error("Invalid email or password");
         }
 
         if (user.status === "BANNED") {
+          throw new Error("This account has been banned");
+        }
+        if (user.status === "SUSPENDED") {
           throw new Error("This account has been suspended");
         }
 
-        if (user.status === "SUSPENDED") {
-          throw new Error("This account is temporarily suspended");
-        }
-
-        if (!user.passwordHash) {
-          throw new Error("Please sign in with Google or set a password first");
-        }
-
-        const valid = await verifyPassword(credentials.password, user.passwordHash);
-        if (!valid) {
-          // Record failed login attempt
-          await prisma.loginHistory.create({
-            data: { userId: user.id, success: false },
-          }).catch(() => {});
-
+        const isValid = await verifyPassword(credentials.password, user.passwordHash);
+        if (!isValid) {
           throw new Error("Invalid email or password");
         }
 
         if (!user.emailVerified) {
-          throw new Error("Please verify your email before signing in");
+          throw new Error("Please verify your email before logging in");
         }
-
-        // Record successful login
-        await prisma.loginHistory.create({
-          data: { userId: user.id, success: true },
-        }).catch(() => {});
 
         return {
           id: user.id,
           email: user.email,
-          username: user.username || undefined,
-          displayName: user.displayName || undefined,
+          name: user.name,
+          username: user.username ?? undefined,
+          displayName: user.displayName ?? undefined,
           role: user.role,
+          isAdmin: user.isAdmin,
           emailVerified: user.emailVerified,
-          playerId: user.player?.id,
         };
       },
     }),
-
-    // Google OAuth (optional)
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
       ? [
           GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             allowDangerousEmailAccountLinking: true,
+          }),
+        ]
+      : []),
+    ...(process.env.RESEND_API_KEY
+      ? [
+          // Email provider using Resend (optional)
+          // To enable: set RESEND_API_KEY in .env.local
+          // import { ResendProvider } from "next-auth/providers/resend";
+          // ResendProvider({ apiKey: process.env.RESEND_API_KEY })
+        ]
+      : []),
+    ...(process.env.EMAIL_SERVER && process.env.EMAIL_FROM
+      ? [
+          EmailProvider({
+            server: process.env.EMAIL_SERVER,
+            from: process.env.EMAIL_FROM,
           }),
         ]
       : []),
