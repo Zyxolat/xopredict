@@ -158,57 +158,85 @@ export class ArenaService {
   }
 
   /**
-   * Join an existing arena in DB with strict duplicate check and status validation
+   * Join an existing arena in DB with strict duplicate check and status validation.
+   *
+   * Uses an optimistic-concurrency conditional update (compare-and-swap on
+   * currentPlayers) to close a TOCTOU race: without it, two concurrent joins
+   * could both read the same snapshot, both pass validation, and then the
+   * second `update` would silently overwrite the first player's addition
+   * (last-write-wins), losing a paid join or overselling the arena's max
+   * player count.
    */
   static async joinArena(input: JoinArenaInput) {
     const playerLower = input.playerAddress.toLowerCase();
-    const arena = await prisma.arena.findUnique({
-      where: { arenaId: input.arenaId },
-    });
 
-    if (!arena) {
-      throw new Error("Arena not found");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const arena = await prisma.arena.findUnique({
+        where: { arenaId: input.arenaId },
+      });
+
+      if (!arena) {
+        throw new Error("Arena not found");
+      }
+
+      // Validate ArenaStatus
+      if (arena.status !== "OPEN") {
+        throw new Error(`Cannot join arena in ${arena.status} status`);
+      }
+
+      // Prevent duplicate joins
+      const alreadyJoined = arena.players.some(
+        (p) => p.toLowerCase() === playerLower
+      );
+      if (alreadyJoined) {
+        throw new Error("Player already joined this arena");
+      }
+
+      if (arena.currentPlayers >= arena.maxPlayers) {
+        throw new Error("Arena is full");
+      }
+
+      const nextCount = arena.currentPlayers + 1;
+      const isFull = nextCount >= arena.maxPlayers;
+      const nextStatus: DbArenaStatus = isFull ? "FULL" : "OPEN";
+
+      // Conditional (CAS) update: only succeeds if currentPlayers still
+      // matches the snapshot we just validated against.
+      const { count } = await prisma.arena.updateMany({
+        where: {
+          arenaId: input.arenaId,
+          currentPlayers: arena.currentPlayers,
+          status: "OPEN",
+        },
+        data: {
+          currentPlayers: nextCount,
+          players: [...arena.players, playerLower],
+          status: nextStatus,
+        },
+      });
+
+      if (count === 0) {
+        // Lost the race — another join/update landed first. Retry with a
+        // fresh read (the loop above will re-validate duplicate/full checks).
+        continue;
+      }
+
+      const updatedArena = await prisma.arena.findUnique({
+        where: { arenaId: input.arenaId },
+      });
+
+      // Ensure Keeper job is registered / triggered
+      void registerArenaEvent({
+        arenaId: input.arenaId,
+        creatorAddress: arena.creatorAddress || playerLower,
+        betAmount: arena.betAmount ? arena.betAmount.toString() : "10",
+        maxPlayers: arena.maxPlayers || 2,
+      }).catch(() => {});
+
+      return updatedArena;
     }
 
-    // Validate ArenaStatus
-    if (arena.status !== "OPEN") {
-      throw new Error(`Cannot join arena in ${arena.status} status`);
-    }
-
-    // Prevent duplicate joins
-    const alreadyJoined = arena.players.some(
-      (p) => p.toLowerCase() === playerLower
-    );
-    if (alreadyJoined) {
-      throw new Error("Player already joined this arena");
-    }
-
-    if (arena.currentPlayers >= arena.maxPlayers) {
-      throw new Error("Arena is full");
-    }
-
-    const nextCount = arena.currentPlayers + 1;
-    const isFull = nextCount >= arena.maxPlayers;
-    const nextStatus: DbArenaStatus = isFull ? "FULL" : "OPEN";
-
-    const updatedArena = await prisma.arena.update({
-      where: { arenaId: input.arenaId },
-      data: {
-        currentPlayers: nextCount,
-        players: [...arena.players, playerLower],
-        status: nextStatus,
-      },
-    });
-
-    // Ensure Keeper job is registered / triggered
-    void registerArenaEvent({
-      arenaId: input.arenaId,
-      creatorAddress: arena.creatorAddress || playerLower,
-      betAmount: arena.betAmount ? arena.betAmount.toString() : "10",
-      maxPlayers: arena.maxPlayers || 2,
-    }).catch(() => {});
-
-    return updatedArena;
+    throw new Error("Failed to join arena due to concurrent updates, please retry");
   }
 
   /**
