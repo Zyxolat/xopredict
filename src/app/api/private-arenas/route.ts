@@ -1,14 +1,17 @@
 /**
- * GET /api/private-arenas - List user's private arenas or search by invite code
- * POST /api/private-arenas - Create private arena with invite code (Persisted in Prisma DB)
+ * GET /api/private-arenas - List user's private arenas
+ * POST /api/private-arenas - Create private arena with invite code
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { playerIdSchema } from "@/lib/validation";
+import { requireSession, assertSelf } from "@/lib/api-auth";
+import { Decimal } from "@prisma/client/runtime/library";
 import crypto from "crypto";
-import { requireSession, requireSelf, assertSelf } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
+
+const PRIVATE_ARENA_TTL_HOURS = 24;
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,7 +19,8 @@ export async function GET(req: NextRequest) {
     const code = req.nextUrl.searchParams.get("code");
 
     if (code) {
-      // Joining by invite code: any authenticated player may use a code.
+      // Join arena by code (requires a valid session, but no ownership check —
+      // any authenticated user may look up an arena by its invite code).
       const auth = await requireSession();
       if (!auth.ok) return auth.response;
 
@@ -50,10 +54,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const auth = await requireSelf(parsed.data);
+    const auth = await requireSession();
     if (!auth.ok) return auth.response;
+    const forbidden = assertSelf(auth, parsed.data);
+    if (forbidden) return forbidden.response;
 
     const pId = parsed.data;
+
+    // Get user's arenas
     const userArenas = await prisma.privateArena.findMany({
       where: { creatorId: pId },
       orderBy: { createdAt: "desc" },
@@ -63,16 +71,13 @@ export async function GET(req: NextRequest) {
       data: { arenas: userArenas },
     });
   } catch (error) {
-    console.error("[API GET /api/private-arenas] Error:", error);
+    console.error(error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireSession();
-    if (!auth.ok) return auth.response;
-
     const { playerId, betAmount, maxPlayers } = await req.json();
 
     const parsed = playerIdSchema.safeParse(playerId);
@@ -80,8 +85,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const fail = assertSelf(auth, parsed.data);
-    if (fail) return fail.response;
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+    const forbidden = assertSelf(auth, parsed.data);
+    if (forbidden) return forbidden.response;
 
     const pId = parsed.data;
     const player = await prisma.player.findUnique({
@@ -93,23 +100,25 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate bet and player count
-    if (betAmount <= 0 || betAmount > 100) {
+    if (typeof betAmount !== "number" || betAmount <= 0 || betAmount > 100) {
       return NextResponse.json({ error: "Invalid bet amount" }, { status: 400 });
     }
 
-    if (maxPlayers < 2 || maxPlayers > 6) {
+    if (typeof maxPlayers !== "number" || maxPlayers < 2 || maxPlayers > 6) {
       return NextResponse.json({ error: "Invalid player count" }, { status: 400 });
     }
 
     // Generate invite code
     const inviteCode = crypto.randomBytes(6).toString("hex").toUpperCase();
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + PRIVATE_ARENA_TTL_HOURS);
 
     const arena = await prisma.privateArena.create({
       data: {
         creatorId: pId,
         inviteCode,
-        betAmount,
+        betAmount: new Decimal(betAmount),
         maxPlayers,
         currentPlayers: 1,
         status: "active",
@@ -128,7 +137,7 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("[API POST /api/private-arenas] Error:", error);
+    console.error(error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { playerIdSchema } from "@/lib/validation";
 import { Decimal } from "@prisma/client/runtime/library";
-import { requireSelf, assertSelf, requireSession } from "@/lib/api-auth";
+import { requireSession, assertSelf } from "@/lib/api-auth";
 
 const VIP_PASS_PRICE = 10; // 10 USDm/month
 const VIP_DURATION_DAYS = 30;
@@ -42,8 +42,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const auth = await requireSelf(parsed.data);
+    const auth = await requireSession();
     if (!auth.ok) return auth.response;
+    const forbidden = assertSelf(auth, parsed.data);
+    if (forbidden) return forbidden.response;
 
     const pId = parsed.data;
     const player = await prisma.player.findUnique({
@@ -85,9 +87,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireSession();
-    if (!auth.ok) return auth.response;
-
     const { playerId } = await req.json();
 
     const parsed = playerIdSchema.safeParse(playerId);
@@ -95,8 +94,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid player ID" }, { status: 400 });
     }
 
-    const fail = assertSelf(auth, parsed.data);
-    if (fail) return fail.response;
+    const auth = await requireSession();
+    if (!auth.ok) return auth.response;
+    const forbidden = assertSelf(auth, parsed.data);
+    if (forbidden) return forbidden.response;
 
     const pId = parsed.data;
     const player = await prisma.player.findUnique({
@@ -135,7 +136,7 @@ export async function POST(req: NextRequest) {
       where: { id: pId },
       data: {
         vipExpiresAt: expiresAt,
-        totalWonUsdm: new Decimal(player.totalWonUsdm || 0).sub(new Decimal(VIP_PASS_PRICE)),
+        totalWonUsdm: player.totalWonUsdm.sub(new Decimal(VIP_PASS_PRICE)),
       },
     });
 
