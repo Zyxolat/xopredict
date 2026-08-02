@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, assertOwnsAddress } from "@/lib/api-auth";
 import { ArenaService } from "@/lib/services/arena";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,9 @@ export async function POST(request: Request) {
     }
 
     const input = parsed.data;
+
+    const ownership = assertOwnsAddress(auth, input.playerAddress);
+    if (ownership) return ownership.response;
 
     const updatedArena = await ArenaService.joinArena({
       arenaId: input.arenaId,

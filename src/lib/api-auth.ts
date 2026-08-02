@@ -197,6 +197,29 @@ export function assertSelf(auth: AuthOk, playerId: string): AuthFail | null {
 }
 
 // ------------------------------------------------------------------
+// assertOwnsAddress
+// ------------------------------------------------------------------
+
+/**
+ * Verifies the given wallet address matches the authenticated user's own
+ * player address (synchronous, for use after body parsing — mirrors
+ * assertSelf's playerId comparison but for on-chain addresses).
+ */
+export function assertOwnsAddress(auth: AuthOk, address: string): AuthFail | null {
+  if (!auth.player?.address || auth.player.address.toLowerCase() !== address.toLowerCase()) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "This wallet address is not linked to your account" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return null;
+}
+
+// ------------------------------------------------------------------
 // requireAdmin
 // ------------------------------------------------------------------
 

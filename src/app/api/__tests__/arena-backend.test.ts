@@ -18,7 +18,7 @@ const mockGetServerSession = vi.hoisted(() => vi.fn());
 const mockPrisma = vi.hoisted(() => ({
   user: { findUnique: vi.fn(), update: vi.fn() },
   player: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
-  arena: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
+  arena: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
   privateArena: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
 }));
 
@@ -33,13 +33,18 @@ vi.mock("@/lib/keeper/wallet", () => ({
   publicClient: { readContract: vi.fn() },
 }));
 
-function authedSession() {
+function authedSession(address: string = PLAYER1_ADDR) {
   mockGetServerSession.mockResolvedValue({
     user: { id: SELF_USER_ID, name: "Alice", email: "alice@example.com" },
   });
   mockPrisma.user.findUnique.mockResolvedValue({
     id: SELF_USER_ID,
-    player: { id: SELF_PLAYER_ID, address: PLAYER1_ADDR },
+    isAdmin: false,
+  });
+  mockPrisma.player.findUnique.mockResolvedValue({
+    id: SELF_PLAYER_ID,
+    address,
+    isBanned: false,
   });
 }
 
@@ -194,7 +199,7 @@ describe("Phase 4.2 Arena Backend & Persistence APIs", () => {
     });
 
     it("rejects join if arena status is not OPEN", async () => {
-      authedSession();
+      authedSession(PLAYER2_ADDR);
       mockPrisma.arena.findUnique.mockResolvedValue({
         id: "arena-uuid-1",
         arenaId: 1n,
@@ -216,24 +221,26 @@ describe("Phase 4.2 Arena Backend & Persistence APIs", () => {
     });
 
     it("successfully joins and sets status FULL when maxPlayers reached", async () => {
-      authedSession();
-      mockPrisma.arena.findUnique.mockResolvedValue({
-        id: "arena-uuid-1",
-        arenaId: 1n,
-        maxPlayers: 2,
-        currentPlayers: 1,
-        status: "OPEN",
-        players: [PLAYER1_ADDR.toLowerCase()],
-      });
+      authedSession(PLAYER2_ADDR);
+      mockPrisma.arena.findUnique
+        .mockResolvedValueOnce({
+          id: "arena-uuid-1",
+          arenaId: 1n,
+          maxPlayers: 2,
+          currentPlayers: 1,
+          status: "OPEN",
+          players: [PLAYER1_ADDR.toLowerCase()],
+        })
+        .mockResolvedValueOnce({
+          id: "arena-uuid-1",
+          arenaId: 1n,
+          maxPlayers: 2,
+          currentPlayers: 2,
+          status: "FULL",
+          players: [PLAYER1_ADDR.toLowerCase(), PLAYER2_ADDR.toLowerCase()],
+        });
 
-      mockPrisma.arena.update.mockResolvedValue({
-        id: "arena-uuid-1",
-        arenaId: 1n,
-        maxPlayers: 2,
-        currentPlayers: 2,
-        status: "FULL",
-        players: [PLAYER1_ADDR.toLowerCase(), PLAYER2_ADDR.toLowerCase()],
-      });
+      mockPrisma.arena.updateMany.mockResolvedValue({ count: 1 });
 
       const req = reqJSON("http://localhost/api/arenas/join", {
         arenaId: "1",

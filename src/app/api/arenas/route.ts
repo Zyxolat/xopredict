@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, assertOwnsAddress } from "@/lib/api-auth";
 import { ArenaService } from "@/lib/services/arena";
 import { DbArenaStatus } from "@prisma/client";
 
@@ -66,6 +66,10 @@ export async function POST(request: Request) {
     }
 
     const input = parsed.data;
+
+    const ownership = assertOwnsAddress(auth, input.creatorAddress);
+    if (ownership) return ownership.response;
+
     const arena = await ArenaService.createArena({
       arenaId: input.arenaId,
       creatorAddress: input.creatorAddress,
