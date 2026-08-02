@@ -23,10 +23,21 @@ export default function AccountSettingsPage() {
     setMessage(null);
 
     try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ displayName }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update profile");
+      }
+
       await update({ displayName });
       setMessage("Account details updated successfully");
-    } catch {
-      setMessage("Failed to update profile");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Failed to update profile");
     } finally {
       setIsSaving(false);
     }
