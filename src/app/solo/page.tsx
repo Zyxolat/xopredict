@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { parseEventLogs, parseUnits } from "viem";
 import { useSession } from "next-auth/react";
@@ -108,38 +108,41 @@ export default function SoloPage() {
   }, [startStatus, startReceipt, activeGameId, refetchBalance]);
 
   // Synchronize with backend API after pickSoloCard transaction completes
-  const syncBackend = async (confirmedHash: string, cardIndex: number) => {
-    if (!session?.user?.id || activeGameId === null) return;
-    setIsSyncing(true);
-    setSyncError(null);
-    try {
-      const res = await fetch("/api/solo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          playerId: session.user.id,
-          cardIndex,
-          betAmount: bet || "1",
-          roundId: activeGameId.toString(),
-          transactionHash: confirmedHash,
-        }),
-      });
+  const syncBackend = useCallback(
+    async (confirmedHash: string, cardIndex: number) => {
+      if (!session?.user?.id || activeGameId === null) return;
+      setIsSyncing(true);
+      setSyncError(null);
+      try {
+        const res = await fetch("/api/solo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerId: session.user.id,
+            cardIndex,
+            betAmount: bet || "1",
+            roundId: activeGameId.toString(),
+            transactionHash: confirmedHash,
+          }),
+        });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to record solo game on server");
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to record solo game on server");
+        }
+
+        setGameStep("waiting_randomness");
+        void refetchBalance();
+      } catch (err: unknown) {
+        console.error("Backend sync error:", err);
+        const msg = err instanceof Error ? err.message : "Backend sync failed";
+        setSyncError(msg);
+      } finally {
+        setIsSyncing(false);
       }
-
-      setGameStep("waiting_randomness");
-      void refetchBalance();
-    } catch (err: unknown) {
-      console.error("Backend sync error:", err);
-      const msg = err instanceof Error ? err.message : "Backend sync failed";
-      setSyncError(msg);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+    },
+    [session?.user?.id, activeGameId, bet, refetchBalance]
+  );
 
   // Trigger backend sync once pickSoloCard transaction is confirmed
   useEffect(() => {
@@ -153,7 +156,7 @@ export default function SoloPage() {
     ) {
       void syncBackend(pickTxHash, pickedCard);
     }
-  }, [pickStatus, pickTxHash, pickedCard, gameStep, isSyncing, syncError]);
+  }, [pickStatus, pickTxHash, pickedCard, gameStep, isSyncing, syncError, syncBackend]);
 
   // Poll automated relayer/keeper status endpoint while waiting for randomness & settlement
   useEffect(() => {
